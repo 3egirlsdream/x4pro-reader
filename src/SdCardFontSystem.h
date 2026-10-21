@@ -7,6 +7,8 @@
 
 #if CROSSPOINT_VECTOR_FONTS
 #include <FontPsram.h>  // PsramVector for resident TTF bytes
+#include <FontReadCache.h>
+#include <HalMemory.h>
 #endif
 
 #include <atomic>
@@ -104,6 +106,8 @@ class SdCardFontSystem {
     // Resident form: the whole file. Streamed form: a PSRAM prefix cache of the
     // file head (cmap/loca/hmtx) — empty when PSRAM couldn't fund it.
     freeink::font::PsramVector<uint8_t> bytes;
+    HalMemory::PsramBuffer readBlocks;
+    FontReadCache readCache;
     HalFile file;  // open handle (streamed form)
     bool streamed = false;
     unsigned long size = 0;

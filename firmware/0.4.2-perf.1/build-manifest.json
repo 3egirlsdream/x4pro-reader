@@ -1,0 +1,87 @@
+{
+  "version": "1.6.5-integrated.0.4.2-perf.1",
+  "target": "x4pro-gh_release",
+  "baseCommit": "93e98bb78702e29868a16a13b80c40e6b36ccdff",
+  "sdkCommit": "111fdcc7f0176c3ee38391a160ee296bf492dbd8",
+  "lucideCommit": "c81680e066f45b640743ca78ae36cdedda3f0318",
+  "application": {
+    "file": "x4pro-integrated-0.4.2-perf.1-candidate.bin",
+    "bytes": 5919328,
+    "sha256": "2cce441e469be6e08bff6def681854a473be82960b0372a223cc46781fc7c108",
+    "linkedFlashBytes": 5914310,
+    "staticRamBytes": 103304,
+    "applicationPartitionBytes": 6553600,
+    "partitionHeadroomBytes": 634272,
+    "boardTag": "x4pro",
+    "chip": "ESP32-S3",
+    "checksumAndHash": "valid",
+    "devicePartitionReadBack": false,
+    "sourceFilesChangedByPublication": false
+  },
+  "hostComparison": {
+    "actualBookBytes": 2498639,
+    "pages": 120,
+    "txtReads": [
+      120,
+      33
+    ],
+    "txtReadBytes": [
+      983040,
+      532480
+    ],
+    "maxWidthCallsPerPage": [
+      417,
+      357
+    ],
+    "maxMeasuredCodepoints": [
+      11920,
+      9640
+    ],
+    "redraws": 50,
+    "redrawBookReads": [
+      50,
+      0
+    ],
+    "redrawIndexWrites": [
+      50,
+      0
+    ],
+    "redrawIndexFlushes": [
+      100,
+      0
+    ],
+    "redrawProgressWrites": [
+      50,
+      0
+    ],
+    "hardwareSpeedupMeasured": false
+  },
+  "tests": {
+    "ctestPassed": 394,
+    "navigationAssertions": 101349,
+    "powerInputCombinations": 32,
+    "realFreeType": "passed",
+    "txtPagingCacheStorageFailures": "passed UBSan",
+    "weatherModelStorageCoordinates": "passed UBSan",
+    "telemetryConcurrentSamples": 40000,
+    "format": "repository wrapper passed",
+    "incrementalPatch": "Applied to 0.4.1 archive; all changed files byte-identical",
+    "fullPatch": "git apply --check on fixed upstream HEAD passed"
+  },
+  "memory": {
+    "addedStaticCountersBytes": 256,
+    "optionalTxtPsramPerLoadedBookBytes": 16384,
+    "fallback": "direct HalStorage reads without PSRAM"
+  },
+  "status": "Performance candidate; host checks passed; installation and device latency/24h battery acceptance not confirmed",
+  "source": "This repository x4pro branch; application binary was built from the fixed performance candidate sources before documentation/packaging changes",
+  "hardware": {
+    "lastExplicitUserReportedInstall": "1.6.5-integrated.0.4.0",
+    "candidateInstallationConfirmed": false,
+    "deviceLatencyMeasured": false,
+    "timedWeatherSleepValidated": false,
+    "battery24hValidated": false,
+    "stockRecoveryValidated": false
+  },
+  "upstream": "https://github.com/crosspoint-reader/crosspoint-reader"
+}

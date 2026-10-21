@@ -34,7 +34,8 @@ void ClearCacheActivity::render(RenderLock&&) {
 
   renderer.clearScreen();
 
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_CLEAR_READING_CACHE));
+  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_CLEAR_READING_CACHE),
+                 nullptr, state != CLEARING);
 
   if (state == WARNING) {
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 60, tr(STR_CLEAR_CACHE_WARNING_1), true);
@@ -143,15 +144,8 @@ void ClearCacheActivity::clearCache() {
 void ClearCacheActivity::loop() {
   if (state == WARNING) {
     if (confirmPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
-
-    if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-      beginClear();
-    }
-
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-      LOG_DBG("CLEAR_CACHE", "User cancelled");
-      goBack();
-    }
+    // Back/outside dismissed the modal without choosing its destructive action.
+    goBack();
     return;
   }
 

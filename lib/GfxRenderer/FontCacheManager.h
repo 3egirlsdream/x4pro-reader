@@ -54,6 +54,7 @@ class FontCacheManager {
   PrewarmScope createPrewarmScope();
 
  private:
+  void clearPageCaches();
   const std::map<int, EpdFontFamily>& fontMap_;
   const std::map<int, SdCardFont*>& sdCardFonts_;
   // Read only when CROSSPOINT_VECTOR_FONTS is on (PSRAM boards).

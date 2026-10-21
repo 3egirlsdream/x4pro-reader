@@ -6,6 +6,7 @@
 #include <HalDisplay.h>
 #include <HalPowerManager.h>
 #include <Memory.h>
+#include <Performance.h>
 #include <VectorFontSupport.h>
 
 #include <algorithm>
@@ -67,13 +68,17 @@ void ActivityManager::renderTaskLoop() {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     // Acquire the lock before reading currentActivity to avoid a TOCTOU race
     // where the main task deletes the activity between the null-check and render().
+    const auto waitStarted = millis();
     RenderLock lock;
+    performance::record(performance::Stage::RenderWait, millis() - waitStarted);
     if (currentActivity) {
       HalPowerManager::Lock powerLock;  // Ensure we don't go into low-power mode while rendering
       // Night mode is a global output polarity applied to every activity.
       // The sleep screen forces normal polarity itself (SleepActivity).
       display.setInverted(SETTINGS.screenInverted != 0);
+      HeaderBackTapTarget::beginFrame();
       currentActivity->render(std::move(lock));
+      HeaderBackTapTarget::publish();
     }
     // Notify any task blocked in requestUpdateAndWait() that the render is done.
     TaskHandle_t waiter = nullptr;
@@ -101,7 +106,7 @@ void ActivityManager::loop() {
     return;
   }
 
-  if (currentActivity) {
+  if (currentActivity && pendingAction == PendingAction::None) {
     if (!currentActivity->isHomeActivity() && mappedInput.wasHomeGesture()) {
       if (currentActivity->handleHomeGesture()) {
         return;
@@ -134,7 +139,9 @@ void ActivityManager::loop() {
 
   while (pendingAction != PendingAction::None) {
     if (pendingAction == PendingAction::Pop) {
+      const auto waitStarted = millis();
       RenderLock lock;
+      performance::record(performance::Stage::NavigationWait, millis() - waitStarted);
 
       if (!currentActivity) {
         // Should never happen in practice
@@ -181,16 +188,22 @@ void ActivityManager::loop() {
 
     } else if (pendingActivity) {
       // Current activity has requested a new activity to be launched
+      const auto waitStarted = millis();
       RenderLock lock;
+      performance::record(performance::Stage::NavigationWait, millis() - waitStarted);
 
       if (pendingAction == PendingAction::Replace) {
         // Destroy the current activity
         exitActivity(lock);
-        // Clear the stack
+        // Clear the stack; a reader may be underneath a menu during sleep.
+        bool saveStackTiming = false;
         while (!stackActivities.empty()) {
+          saveStackTiming |= stackActivities.back()->isReaderActivity() || stackActivities.back()->name == "Weather";
+          performance::Scope timing(performance::Stage::ActivityExit);
           stackActivities.back()->onExit();
           stackActivities.pop_back();
         }
+        if (saveStackTiming && !performance::saveSnapshot()) LOG_ERR("PERF", "Could not save timing snapshot");
       } else if (pendingAction == PendingAction::Push) {
         // Move current activity to stack
         stackActivities.push_back(std::move(currentActivity));
@@ -203,7 +216,10 @@ void ActivityManager::loop() {
       currentActivity = std::move(pendingActivity);
 
       lock.unlock();  // onEnter may acquire its own lock
-      currentActivity->onEnter();
+      {
+        performance::Scope timing(performance::Stage::ActivityEnter);
+        currentActivity->onEnter();
+      }
 
       // onEnter may request another pending action, we will handle it in the next loop iteration
       continue;
@@ -222,8 +238,13 @@ void ActivityManager::loop() {
 void ActivityManager::exitActivity(const RenderLock& lock) {
   // Note: lock must be held by the caller
   if (currentActivity) {
-    currentActivity->onExit();
-    currentActivity.reset();
+    const bool saveTiming = currentActivity->isReaderActivity() || currentActivity->name == "Weather";
+    {
+      performance::Scope timing(performance::Stage::ActivityExit);
+      currentActivity->onExit();
+      currentActivity.reset();
+    }
+    if (saveTiming && !performance::saveSnapshot()) LOG_ERR("PERF", "Could not save timing snapshot");
   }
   // The outgoing screen's header back button must not eat taps on the next
   // screen; the next header draw re-records it.
@@ -231,6 +252,7 @@ void ActivityManager::exitActivity(const RenderLock& lock) {
 }
 
 void ActivityManager::replaceActivity(std::unique_ptr<Activity>&& newActivity) {
+  mappedInput.suppressNavigationInput();
   mappedInput.resetHomeButtonInput();
   // Note: no lock here, this is usually called by loop() and we may run into deadlock
   if (currentActivity) {
@@ -241,6 +263,7 @@ void ActivityManager::replaceActivity(std::unique_ptr<Activity>&& newActivity) {
   } else {
     // No current activity, safe to launch immediately
     currentActivity = std::move(newActivity);
+    performance::Scope timing(performance::Stage::ActivityEnter);
     currentActivity->onEnter();
   }
 }
@@ -340,6 +363,7 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem, bool cleanInitialRefr
 void ActivityManager::goToCrashReport() { replaceActivity(std::make_unique<CrashActivity>(renderer, mappedInput)); }
 
 void ActivityManager::pushActivity(std::unique_ptr<Activity>&& activity) {
+  mappedInput.suppressNavigationInput();
   mappedInput.resetHomeButtonInput();
   if (pendingActivity) {
     // Should never happen in practice
@@ -351,6 +375,7 @@ void ActivityManager::pushActivity(std::unique_ptr<Activity>&& activity) {
 }
 
 void ActivityManager::popActivity() {
+  mappedInput.suppressNavigationInput();
   mappedInput.resetHomeButtonInput();
   if (pendingActivity) {
     // Should never happen in practice
@@ -359,6 +384,8 @@ void ActivityManager::popActivity() {
   }
   pendingAction = PendingAction::Pop;
 }
+
+bool ActivityManager::isWeatherActivity() const { return currentActivity && currentActivity->name == "Weather"; }
 
 bool ActivityManager::preventAutoSleep() const { return currentActivity && currentActivity->preventAutoSleep(); }
 

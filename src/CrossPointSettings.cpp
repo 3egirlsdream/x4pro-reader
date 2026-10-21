@@ -103,6 +103,8 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
 
   // Language -- managed by LanguageSelectActivity, not in SettingsList.
   // Stored as ISO code string ("EN", "DE", ...) for stability across enum reorders.
+  doc["weatherChineseDefaultApplied"] = weatherChineseDefaultApplied;
+  doc["weatherClickPowerApplied"] = weatherClickPowerApplied;
   doc["language"] = (language < getLanguageCount()) ? LANGUAGE_CODES[language] : "EN";
 
   // A uint16_t mask, so it does not fit the uint8_t generic loop. Omitted while
@@ -250,6 +252,8 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   copyToField(dictionaryName, doc["dictionaryName"] | "", sizeof(dictionaryName));
 
   // Language -- stored as code string for stability across enum reorders.
+  weatherChineseDefaultApplied = doc["weatherChineseDefaultApplied"] | false;
+  weatherClickPowerApplied = doc["weatherClickPowerApplied"] | false;
   if (doc["language"].is<const char*>()) {
     language = static_cast<uint8_t>(I18n::languageFromCode(doc["language"].as<const char*>()));
   }

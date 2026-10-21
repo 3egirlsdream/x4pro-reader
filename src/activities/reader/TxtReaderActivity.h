@@ -2,6 +2,7 @@
 
 #include <Txt.h>
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
@@ -12,7 +13,7 @@
 class TxtReaderActivity final : public ReaderActivity {
   std::unique_ptr<Txt> txt;
 
-  int currentPage = 0;
+  std::atomic<int> currentPage{0};
   int totalPages = 1;
 
   // Streaming text reader - stores file offsets for each page
@@ -20,7 +21,15 @@ class TxtReaderActivity final : public ReaderActivity {
   std::vector<std::string> currentPageLines;
   int linesPerPage = 0;
   int viewportWidth = 0;
-  bool initialized = false;
+  std::atomic<bool> initialized{false};
+  std::atomic<bool> indexComplete{false};
+  size_t savedIndexEntries = 0;
+  bool indexHeaderWritten = false;
+  uint32_t layoutMillis = 0;
+  int loadedPage = -1;
+  size_t loadedNextOffset = 0;
+  int savedProgressPage = -1;
+  bool savedIndexComplete = false;
 
   // Cached settings for cache validation
   int cachedFontId = 0;
@@ -35,10 +44,11 @@ class TxtReaderActivity final : public ReaderActivity {
   void initializeReader(GfxRenderer& renderer);
   bool loadPageAtOffset(const GfxRenderer& renderer, size_t offset, std::vector<std::string>& outLines,
                         size_t& nextOffset);
-  void buildPageIndex(GfxRenderer& renderer);
+  void observePage(size_t page, size_t nextOffset);
+  float byteProgress() const;
   bool loadPageIndexCache();
-  void savePageIndexCache() const;
-  void saveProgress() const;
+  bool savePageIndexCache();
+  void saveProgress();
   void loadProgress();
   void renderStatusBar() const;
 

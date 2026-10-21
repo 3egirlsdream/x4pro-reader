@@ -38,6 +38,11 @@ void ButtonRemapActivity::onEnter() {
 }
 
 void ButtonRemapActivity::loop() {
+  // Physical front keys still assign mappings; screen Back cancels the editor.
+  if (mappedInput.wasBackGesture()) {
+    finish();
+    return;
+  }
   // Clear any temporary warning after its timeout.
   if (errorUntil > 0 && millis() > errorUntil) {
     errorMessage.clear();

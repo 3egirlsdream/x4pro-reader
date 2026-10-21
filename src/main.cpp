@@ -15,11 +15,14 @@
 #include <HalTiltSensor.h>
 #include <I18n.h>
 #include <Logging.h>
+#include <Memory.h>
+#include <Performance.h>
 #include <SPI.h>
 #include <VectorFontSupport.h>
 #include <WiFi.h>
 #include <XteinkDetect.h>
 #include <builtinFonts/all.h>
+#include <esp_sleep.h>
 
 #include <cstring>
 
@@ -39,6 +42,9 @@
 #include "util/ButtonNavigator.h"
 #include "util/ScreenshotUtil.h"
 #include "util/Timezones.h"
+#include "weather/WeatherActivity.h"
+#include "weather/WeatherSleep.h"
+#include "weather/WeatherStore.h"
 
 #if CROSSPOINT_VECTOR_FONTS
 // Rendering (incl. FreeType TTF rasterization) runs on the Arduino loop task.
@@ -159,7 +165,9 @@ enum class BootResume : uint8_t {
 // on wake and already clears the heap, so rebooting here would just power the
 // device back up against the user's sleep gesture. Never cleared:
 // startDeepSleep() does not return, so a set latch only ends at the wakeup reset.
-static bool deepSleepInProgress = false;
+bool deepSleepInProgress = false;
+static bool powerOffRequested = false;
+void requestPowerOff() { powerOffRequested = true; }
 
 // A silent restart is internal maintenance, so the light must come back exactly
 // as the user left it. SETTINGS.frontlightOn is the saved preference and
@@ -259,8 +267,10 @@ static bool loadSleepFrameBuffer() {
 }
 
 // Enter deep sleep mode
-void enterDeepSleep(bool fromTimeout = false) {
+void enterDeepSleep(bool fromTimeout = false, bool allowWeather = true) {
+  if (allowWeather && weather::startSleep(renderer, mappedInputManager)) return;
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
+  APP_STATE.weatherSleepArmed = false;
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
 
   const bool isQuickResumeSleep =
@@ -298,6 +308,25 @@ void enterDeepSleep(bool fromTimeout = false) {
   LOG_DBG("MAIN", "Entering deep sleep");
 
   powerManager.startDeepSleep(gpio);
+}
+
+void weather::finishSleep(uint32_t seconds) {
+  HalPowerManager::Lock powerLock;
+  APP_STATE.weatherSleepArmed = seconds > 0;
+  APP_STATE.showBootScreen = false;
+  if (!APP_STATE.saveToFile()) {
+    seconds = 0;  // Never schedule unattended work without its persisted routing state.
+    LOG_ERR("WX", "Sleep state not saved; timer disabled");
+  }
+  deepSleepInProgress = true;
+  Frontlight.setOn(false);
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  halTiltSensor.deepSleep();
+  display.deepSleep();
+  Storage.prepareForDeepSleep();
+  LOG_INF("WX", "Deep sleep for %lu seconds", static_cast<unsigned long>(seconds));
+  powerManager.startDeepSleep(gpio, seconds);
 }
 
 void setupDisplayAndFonts(bool seamless = false) {
@@ -347,6 +376,7 @@ void setupDisplayAndFonts(bool seamless = false) {
 }
 
 void setup() {
+  performance::Scope bootTiming(performance::Stage::Boot);
   BoardConfig::holdPowerRails();
 
 #ifdef ENABLE_SERIAL_LOG
@@ -429,7 +459,36 @@ void setup() {
   if (gpio.hasTouch()) {
     SETTINGS.readerMenuStyle = CrossPointSettings::READER_MENU_TOOLBAR;
   }
-  SETTINGS.loadFromFile();
+  const bool settingsLoaded = SETTINGS.loadFromFile();
+#ifdef X4PRO_WEATHER_BUILD
+  if (!SETTINGS.weatherClickPowerApplied) {
+    SETTINGS.shortPwrBtn = CrossPointSettings::SHORT_PWRBTN::SLEEP;
+    SETTINGS.doubleClickPwrLight = 0;
+    SETTINGS.weatherClickPowerApplied = true;
+    SETTINGS.saveToFile();
+  }
+  if (!SETTINGS.weatherChineseDefaultApplied) {
+    SETTINGS.language = static_cast<uint8_t>(Language::ZH_CN);
+    SETTINGS.weatherChineseDefaultApplied = true;
+    SETTINGS.saveToFile();
+  }
+  if (!settingsLoaded && Storage.exists("/fonts/X4ProSansSC/X4ProSansSC-Regular.ttf")) {
+    SETTINGS.language = static_cast<uint8_t>(Language::ZH_CN);
+    snprintf(SETTINGS.sdFontFamilyName, sizeof(SETTINGS.sdFontFamilyName), "%s", "X4ProSansSC");
+    SETTINGS.saveToFile();
+  }
+#else
+  (void)settingsLoaded;
+#endif
+  weather::Store::instance().load();
+  const bool weatherTimerWake = BoardConfig::isX4Pro() && !recoveryFirmwareMode && !rebootedFromPanic &&
+                                APP_STATE.weatherSleepArmed && weather::Store::instance().settings.enabled &&
+                                esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER &&
+                                !mappedInputManager.isPressed(MappedInputManager::Button::Power);
+  if (!weatherTimerWake) {
+    APP_STATE.weatherSleepArmed = false;
+    weather::Store::instance().checkBattery(true);
+  }
   // Push the saved timezone's POSIX rule into the clock (migrating the legacy
   // UTC-offset setting on first boot after the update).
   timezones::applyToClock();
@@ -446,7 +505,7 @@ void setup() {
   // nor light up against the user's wake preference.
   const bool restoreLightOn =
       isSilentReboot ? silentRebootLightOn : (SETTINGS.frontlightOn != 0 && SETTINGS.frontlightRestoreOnWake != 0);
-  Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, restoreLightOn);
+  Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, restoreLightOn && !weatherTimerWake);
 
   switch (wakeupReason) {
     case HalGPIO::WakeupReason::PowerButton:
@@ -496,35 +555,35 @@ void setup() {
   bool allowFastInitialReaderRefresh = false;
   bool needsWakeRefresh = false;
 
-  setupDisplayAndFonts(resume != BootResume::Splash);
+  setupDisplayAndFonts(resume != BootResume::Splash || weatherTimerWake);
 
-  switch (resume) {
-    case BootResume::Silent:
-      // Splash skipped: the routing block below picks the target activity; the
-      // panel keeps showing the pre-reboot popup until that first paint lands.
-      break;
-    case BootResume::SplashlessWake:
-      // One-shot flag: re-arm the splash for the next ordinary boot. Save
-      // before any painting so a hang in the blocking paint path can't strand
-      // us in a splashless-with-no-frame loop on the next boot.
-      APP_STATE.showBootScreen = true;
-      APP_STATE.saveToFile();
-      if (Storage.exists(SLEEP_FRAME_FILE) && loadSleepFrameBuffer()) {
-        if (gpio.deviceIsX3()) {
-          // begin() clears the X3 controller RAM, so restore the saved frame as
-          // the baseline for the first reader paint without refreshing the panel.
-          renderer.cleanupGrayscaleWithFrameBuffer();
-          allowFastInitialReaderRefresh = true;
+  if (!weatherTimerWake) switch (resume) {
+      case BootResume::Silent:
+        // Splash skipped: the routing block below picks the target activity; the
+        // panel keeps showing the pre-reboot popup until that first paint lands.
+        break;
+      case BootResume::SplashlessWake:
+        // One-shot flag: re-arm the splash for the next ordinary boot. Save
+        // before any painting so a hang in the blocking paint path can't strand
+        // us in a splashless-with-no-frame loop on the next boot.
+        APP_STATE.showBootScreen = true;
+        APP_STATE.saveToFile();
+        if (Storage.exists(SLEEP_FRAME_FILE) && loadSleepFrameBuffer()) {
+          if (gpio.deviceIsX3()) {
+            // begin() clears the X3 controller RAM, so restore the saved frame as
+            // the baseline for the first reader paint without refreshing the panel.
+            renderer.cleanupGrayscaleWithFrameBuffer();
+            allowFastInitialReaderRefresh = true;
+          }
+        } else {
+          // Clean the retained sleep image as part of the first Home paint.
+          needsWakeRefresh = true;
         }
-      } else {
-        // Clean the retained sleep image as part of the first Home paint.
-        needsWakeRefresh = true;
-      }
-      break;
-    case BootResume::Splash:
-      activityManager.goToBoot();
-      break;
-  }
+        break;
+      case BootResume::Splash:
+        activityManager.goToBoot();
+        break;
+    }
 
   // Output polarity is resolved per render by ActivityManager (night mode
   // inverts only the reading surfaces), so nothing to restore here.
@@ -536,6 +595,14 @@ void setup() {
   } else if (rebootedFromPanic) {
     // If we rebooted from a panic, go to crash report screen to show the panic info
     activityManager.goToCrashReport();
+  } else if (weatherTimerWake) {
+    auto weatherActivity = makeUniqueNoThrow<weather::WeatherActivity>(renderer, mappedInputManager, true, true);
+    if (weatherActivity)
+      activityManager.replaceActivity(std::move(weatherActivity));
+    else {
+      LOG_ERR("WX", "Weather allocation failed; timer disabled");
+      weather::finishSleep(0);
+    }
   } else if (resume == BootResume::Silent && snapshotTarget == SILENT_REBOOT_TARGET_READER &&
              !APP_STATE.openEpubPath.empty()) {
     activityManager.goToReader(APP_STATE.openEpubPath);
@@ -588,6 +655,28 @@ void loop() {
 
   gpio.setSharedConfirmPowerShortPressEmitsPower(SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP);
   mappedInputManager.update();
+
+  if (powerOffRequested && !activityManager.requiresExclusiveStorageLoop()) {
+    powerOffRequested = false;
+    enterDeepSleep(false, false);
+    return;
+  }
+
+  if (weather::sleepActive) {
+    // Weather owns power-button cancellation while a timed refresh is in progress.
+    activityManager.loop();
+    delay(10);
+    return;
+  }
+
+  static int lastNetworkUiState = -1;
+  const int networkUiState = static_cast<int>(WiFi.getMode()) * 32 + static_cast<int>(WiFi.status());
+  if (networkUiState != lastNetworkUiState) {
+    lastNetworkUiState = networkUiState;
+    if (!activityManager.isReaderActivity() && !activityManager.isWeatherActivity() &&
+        !activityManager.requiresExclusiveStorageLoop())
+      activityManager.requestUpdate();
+  }
 
   if (activityManager.requiresExclusiveStorageLoop()) {
     // USB Drive handed the raw SD card to the host. Do not run screenshots,
@@ -732,6 +821,15 @@ void loop() {
   static bool powerReleasedSinceWake = false;
   if (!gpio.isPressed(HalGPIO::BTN_POWER)) powerReleasedSinceWake = true;
 
+  const bool x4ProReleaseSleep = BoardConfig::isX4Pro() &&
+                                 SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP &&
+                                 !x4ProDoubleClickPwrLight;
+  if (x4ProReleaseSleep && powerReleasedSinceWake && millis() >= allowSleepAt &&
+      mappedInputManager.wasReleased(MappedInputManager::Button::Power) && !gpio.isPressed(HalGPIO::BTN_DOWN)) {
+    enterDeepSleep();
+    return;
+  }
+
   // On X4 Pro with SLEEP, a press still within the click window is a
   // double-click candidate — let it be released and evaluated above instead
   // of sleeping on button-down.
@@ -739,7 +837,7 @@ void loop() {
                                         SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP &&
                                         gpio.getPowerButtonHeldTime() <= X4PRO_POWER_CLICK_MAX_HOLD_MS;
 
-  if (!x4ProAwaitingClickWindow && powerReleasedSinceWake && millis() >= allowSleepAt &&
+  if (!x4ProReleaseSleep && !x4ProAwaitingClickWindow && powerReleasedSinceWake && millis() >= allowSleepAt &&
       gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getPowerButtonHeldTime() > SETTINGS.getPowerButtonDuration()) {
     // If the screenshot combination is potentially being pressed, don't sleep
     if (gpio.isPressed(HalGPIO::BTN_DOWN)) {

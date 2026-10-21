@@ -10,6 +10,7 @@
 #include "RecentBooksStore.h"
 #include "activities/UiTabListActivity.h"
 #include "components/OptionPopup.h"
+#include "desktop/DesktopShelf.h"
 
 // One Library screen: every indexed book on the card shown by recency, title,
 // or author. The Recent shelf orders by file modification time (when a book
@@ -34,6 +35,7 @@ class LibraryListActivity final : public UiTabListActivity {
   LibraryListActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
 
   void onEnter() override;
+  void loop() override;
   void onExit() override;
 
  protected:
@@ -59,6 +61,7 @@ class LibraryListActivity final : public UiTabListActivity {
   void render(RenderLock&& lock) override;
 
  private:
+  std::unique_ptr<desktop::Shelf> indexLoader;
   // The screen's own actions, after the base's ACTION_ROW / ACTION_TAB.
   static constexpr freeink::ui::ActionId ACTION_SEARCH = ACTION_TAB_USER;
   static constexpr freeink::ui::ActionId ACTION_REBUILD = ACTION_SEARCH + 1;
@@ -97,7 +100,6 @@ class LibraryListActivity final : public UiTabListActivity {
   void handleBackAction();
   static void searchActionTrampoline(const freeink::ui::ActionEvent& event, void* user);
   static void rebuildActionTrampoline(const freeink::ui::ActionEvent& event, void* user);
-  static void backActionTrampoline(const freeink::ui::ActionEvent& event, void* user);
 
   // Data
   void applyFilter();

@@ -16,6 +16,31 @@ namespace fui = freeink::ui;
 
 void MappedInputManager::update(const bool deferHomeButtonAction) const {
   gpio.update();
+  navigationSuppressed = false;
+  navigationBackFrame = false;
+  navigationTouch.nextFrame();
+  for (uint8_t value = 0; value <= static_cast<uint8_t>(Button::ScreenDown); ++value) {
+    const auto button = static_cast<Button>(value);
+    const uint32_t bit = 1u << value;
+    if ((navigationHeldButtons & bit) && !mapButton(button, &HalGPIO::isPressed) &&
+        !mapButton(button, &HalGPIO::wasReleased))
+      navigationHeldButtons &= ~bit;
+  }
+  float nx = 0, ny = 0;
+  int x = 0, y = 0;
+  const int orientation = static_cast<int>(renderer.getOrientation());
+  if (gpio.wasTouchDown(nx, ny)) {
+    renderer.tapToLogical(nx, ny, x, y);
+    navigationTouch.begin(x, y, orientation, HeaderBackTapTarget::snapshot());
+  }
+  if (gpio.isTouchHeldAt(nx, ny)) {
+    renderer.tapToLogical(nx, ny, x, y);
+    navigationTouch.move(x, y, orientation);
+  }
+  if (gpio.wasTouchReleased()) {
+    navigationTouch.release(gpio.wasTouchTap(nx, ny), gpio.lastTouchHeldMs(), orientation,
+                            HeaderBackTapTarget::snapshot());
+  }
   homeAction = HomeButtonAction::Ignore;
   if (gpio.hasHomeKey()) {
     homeAction = homeButtonInput.update(millis(), gpio.wasHomeKeyTapped(), gpio.wasHomeKeyLongPressed(),
@@ -164,16 +189,30 @@ void MappedInputManager::rememberTouchHeldTime() const {
   touchHeldOverrideAt = millis();
 }
 
+void MappedInputManager::suppressNavigationInput() const {
+  navigationSuppressed = true;
+  navigationTouch.reset();
+  navigationBackFrame = false;
+  touchHeldOverrideValid = false;
+  gpio.suppressTouchContact();
+  for (uint8_t value = 0; value <= static_cast<uint8_t>(Button::ScreenDown); ++value) {
+    if (mapButton(static_cast<Button>(value), &HalGPIO::isPressed)) navigationHeldButtons |= 1u << value;
+  }
+}
+
 bool MappedInputManager::wasScreenTapped(int& x, int& y) const {
+  if (navigationSuppressed || navigationTouch.ownsHeader) return false;
   float nx = 0.0f;
   float ny = 0.0f;
   if (!gpio.wasTouchTap(nx, ny)) return false;
   renderer.tapToLogical(nx, ny, x, y);
+  if (HeaderBackTapTarget::contains(x, y)) return false;
   rememberTouchHeldTime();
   return true;
 }
 
 bool MappedInputManager::wasScreenTouchDown(int& x, int& y) const {
+  if (navigationSuppressed || navigationTouch.ownsHeader) return false;
   float nx = 0.0f;
   float ny = 0.0f;
   unsigned long heldMs = 0;
@@ -184,6 +223,7 @@ bool MappedInputManager::wasScreenTouchDown(int& x, int& y) const {
 }
 
 bool MappedInputManager::wasScreenLongPress(int& x, int& y) const {
+  if (navigationSuppressed || navigationTouch.ownsHeader) return false;
   float nx = 0.0f;
   float ny = 0.0f;
   if (!gpio.wasTouchLongPress(nx, ny)) return false;
@@ -195,6 +235,7 @@ bool MappedInputManager::wasScreenLongPress(int& x, int& y) const {
 }
 
 bool MappedInputManager::isScreenTouchHeld(int& x, int& y) const {
+  if (navigationSuppressed || navigationTouch.ownsHeader) return false;
   // Live contact position while the finger is down (no tap-slop gate) — drag tracking.
   float nx = 0.0f;
   float ny = 0.0f;
@@ -203,7 +244,7 @@ bool MappedInputManager::isScreenTouchHeld(int& x, int& y) const {
   return true;
 }
 
-bool MappedInputManager::wasScreenTouchReleased() const { return gpio.wasTouchReleased(); }
+bool MappedInputManager::wasScreenTouchReleased() const { return !navigationSuppressed && gpio.wasTouchReleased(); }
 
 bool MappedInputManager::wasTapInRect(const int x, const int y, const int width, const int height) const {
   int tx = 0;
@@ -250,6 +291,7 @@ MappedInputManager::RowTouch MappedInputManager::colTouch(int& col, const int le
 }
 
 bool MappedInputManager::decodeSwipe(int& sx, int& sy, int& ex, int& ey) const {
+  if (navigationSuppressed || navigationTouch.ownsHeader) return false;
   float nxs = 0.0f;
   float nys = 0.0f;
   float nxe = 0.0f;
@@ -295,19 +337,10 @@ bool MappedInputManager::wasEdgeSwipe(const freeink::ui::ScreenEdge edge) const 
 }
 
 bool MappedInputManager::wasBackGesture() const {
-  // Tap on the header back button (rect recorded by BaseTheme::drawHeader;
-  // empty on screens without one). Folded into Button::Back alongside the
-  // swipe so every activity's existing Back handling picks it up.
-  int tapX = 0;
-  int tapY = 0;
-  if (wasScreenTapped(tapX, tapY) && HeaderBackTapTarget::contains(tapX, tapY)) {
-    rememberTouchHeldTime();
-    return true;
-  }
-  // Back = left-to-right swipe starting near the left edge. Edge-anchored so that
-  // mid-screen horizontal swipes stay available to activities that consume
-  // SwipeDir::Left/Right (e.g. percent selection, image viewer).
-  return wasEdgeSwipe(fui::ScreenEdge::Left);
+  if (navigationSuppressed) return false;
+  const bool back = navigationTouch.back || wasEdgeSwipe(fui::ScreenEdge::Left);
+  if (back) navigationBackFrame = true;
+  return back;
 }
 
 bool MappedInputManager::wasTopEdgeDownSwipe() const { return wasEdgeSwipe(fui::ScreenEdge::Top); }
@@ -339,8 +372,10 @@ bool MappedInputManager::wasPowerConfirmClick() const {
 #endif
 
 bool MappedInputManager::wasPressed(const Button button) const {
-  if (button == Button::Confirm && homeAction == HomeButtonAction::Confirm) return true;
+  if (navigationSuppressed) return false;
   if (button == Button::Back && wasBackGesture()) return true;
+  if (navigationHeldButtons & (1u << static_cast<uint8_t>(button))) return false;
+  if (button == Button::Confirm && homeAction == HomeButtonAction::Confirm) return true;
 #if FREEINK_CAP_TOUCH
   if (button == Button::Confirm && wasPowerConfirmClick()) return true;
 #endif
@@ -348,8 +383,10 @@ bool MappedInputManager::wasPressed(const Button button) const {
 }
 
 bool MappedInputManager::wasReleased(const Button button) const {
-  if (button == Button::Confirm && homeAction == HomeButtonAction::Confirm) return true;
+  if (navigationSuppressed) return false;
   if (button == Button::Back && wasBackGesture()) return true;
+  if (navigationHeldButtons & (1u << static_cast<uint8_t>(button))) return false;
+  if (button == Button::Confirm && homeAction == HomeButtonAction::Confirm) return true;
 #if FREEINK_CAP_TOUCH
   if (button == Button::Confirm && wasPowerConfirmClick()) return true;
 #endif
@@ -357,6 +394,7 @@ bool MappedInputManager::wasReleased(const Button button) const {
 }
 
 bool MappedInputManager::wasLongPressed(const Button button, const unsigned long thresholdMs) const {
+  if (navigationSuppressed || (navigationHeldButtons & (1u << static_cast<uint8_t>(button)))) return false;
   if (!isPressed(button)) return false;
   const uint16_t bit = 1u << static_cast<uint8_t>(button);
   if ((longPressFiredButtons & bit) != 0 || getHeldTime() < thresholdMs) return false;
@@ -388,6 +426,7 @@ bool MappedInputManager::wasAnyPressed() const { return gpio.wasAnyPressed(); }
 bool MappedInputManager::wasAnyReleased() const { return gpio.wasAnyReleased(); }
 
 unsigned long MappedInputManager::getHeldTime() const {
+  if (navigationBackFrame) return 0;
   // A mapped action has its own meaning, independent of the contact duration.
   if (homeAction != HomeButtonAction::Ignore) return 0;
   if (!gpio.wasAnyPressed() && !gpio.wasAnyReleased() && touchHeldOverrideValid &&

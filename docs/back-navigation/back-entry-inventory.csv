@@ -1,0 +1,124 @@
+file,line,entry
+src/activities/Activity.h,48,virtual bool requiresExclusiveStorageLoop() const { return false; }
+src/activities/ActivityManager.cpp,95,if (currentActivity && currentActivity->requiresExclusiveStorageLoop()) {
+src/activities/ActivityManager.cpp,372,bool ActivityManager::requiresExclusiveStorageLoop() const {
+src/activities/ActivityManager.cpp,373,return currentActivity && currentActivity->requiresExclusiveStorageLoop();
+src/activities/ActivityManager.h,105,bool requiresExclusiveStorageLoop() const;
+src/activities/UiListActivity.cpp,48,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/UiListActivity.cpp,49,onBackButton();
+src/activities/UiListActivity.cpp,139,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, renderer.getScreenWidth(), metrics.headerHeight}, title);"
+src/activities/UiListActivity.h,60,virtual void onBackButton() { finish(); }
+src/activities/browser/OpdsBookBrowserActivity.cpp,133,} else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/browser/OpdsBookBrowserActivity.cpp,140,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/browser/OpdsBookBrowserActivity.cpp,151,} else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/browser/OpdsBookBrowserActivity.cpp,246,header.leadingAction = ACTION_BACK;
+src/activities/browser/OpdsBookBrowserActivity.cpp,265,if (header.leadingAction != fui::NO_ACTION) {
+src/activities/browser/OpdsBookBrowserActivity.cpp,562,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) cancelDownload = true;
+src/activities/home/CrashActivity.cpp,24,"if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasScreenTapped(x, y)) {"
+src/activities/home/CrashActivity.cpp,39,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_CRASH_TITLE), nullptr,"
+src/activities/home/FileBrowserActivity.cpp,519,if (mode == Mode::Books && mappedInput.wasReleased(MappedInputManager::Button::Back) &&
+src/activities/home/FileBrowserActivity.cpp,549,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/home/FileBrowserActivity.cpp,676,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, folderName.c_str());"
+src/activities/home/HomeActivity.cpp,372,if (mappedInput.wasReleased(MappedInputManager::Button::Back) && hasContinueReading && !recentBooks.empty()) {
+src/activities/home/HomeActivity.cpp,506,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.homeTopPadding - metrics.topPadding},"
+src/activities/library/LibraryListActivity.cpp,137,lockNextBackRelease = mappedInput.isPressed(MappedInputManager::Button::Back);
+src/activities/library/LibraryListActivity.cpp,652,void LibraryListActivity::handleBackAction() {
+src/activities/library/LibraryListActivity.cpp,662,} else if (!tabsFocused() && !degraded && !mappedInput.wasBackGesture()) {
+src/activities/library/LibraryListActivity.cpp,718,if (lockNextBackRelease && mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/library/LibraryListActivity.cpp,749,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/library/LibraryListActivity.cpp,750,handleBackAction();
+src/activities/library/LibraryListActivity.cpp,927,header.leadingAction = ACTION_BACK;
+src/activities/library/LibraryListActivity.cpp,942,if (header.leadingAction != fui::NO_ACTION) {
+src/activities/library/LibraryListActivity.h,96,// Staged back-out shared by Button::Back and the header back arrow.
+src/activities/library/LibraryListActivity.h,97,void handleBackAction();
+src/activities/network/CalibreConnectActivity.cpp,114,if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+src/activities/network/CalibreConnectActivity.cpp,133,if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+src/activities/network/CalibreConnectActivity.cpp,189,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_CALIBRE_WIRELESS));"
+src/activities/network/CrossPointWebServerActivity.cpp,379,if (mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasHomeGesture()) {
+src/activities/network/CrossPointWebServerActivity.cpp,389,if (mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasHomeGesture()) {
+src/activities/network/CrossPointWebServerActivity.cpp,405,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},"
+src/activities/network/CrossPointWebServerActivity.cpp,425,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},"
+src/activities/network/NetworkModeSelectionActivity.cpp,90,void NetworkModeSelectionActivity::onCancel() {
+src/activities/network/NetworkModeSelectionActivity.h,31,void onCancel();
+src/activities/network/NetworkModeSelectionActivity.h,37,void onBackButton() override { onCancel(); }
+src/activities/network/UsbDriveActivity.cpp,94,if (canExitWithInput && (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
+src/activities/network/UsbDriveActivity.cpp,110,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_USB_DRIVE), nullptr,"
+src/activities/network/UsbDriveActivity.h,18,bool requiresExclusiveStorageLoop() const override { return true; }
+src/activities/network/WifiSelectionActivity.cpp,594,if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+src/activities/network/WifiSelectionActivity.cpp,610,if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+src/activities/network/WifiSelectionActivity.cpp,675,} else if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+src/activities/network/WifiSelectionActivity.cpp,716,} else if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+src/activities/network/WifiSelectionActivity.cpp,728,mappedInput.wasReleased(MappedInputManager::Button::Back) ||
+src/activities/network/WifiSelectionActivity.cpp,736,if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
+src/activities/network/WifiSelectionActivity.cpp,763,if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+src/activities/network/WifiSelectionActivity.cpp,859,"GUI.drawHeader(renderer, Rect{screen.x, screen.y + metrics.topPadding, screen.width, metrics.headerHeight},"
+src/activities/reader/DictionaryDefinitionActivity.cpp,201,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/reader/DictionaryWordSelectActivity.cpp,241,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/reader/EndOfBookOptions.cpp,128,if (input.wasReleased(MappedInputManager::Button::Back) && input.getHeldTime() < ReaderUtils::GO_HOME_MS) {
+src/activities/reader/EpubReaderActivity.cpp,506,mappedInput.wasReleased(MappedInputManager::Button::Back) ||
+src/activities/reader/EpubReaderActivity.cpp,621,if (footnoteDepth > 0 && mappedInput.wasReleased(MappedInputManager::Button::Back) &&
+src/activities/reader/EpubReaderActivity.cpp,2198,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/reader/EpubReaderActivity.cpp,2357,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/reader/EpubReaderBookmarksActivity.cpp,136,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/reader/EpubReaderChapterSelectionActivity.cpp,108,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/reader/EpubReaderChapterSelectionActivity.cpp,163,"GUI.drawHeader(renderer, Rect{safe.x, safe.y + metrics.topPadding, safe.width, metrics.headerHeight},"
+src/activities/reader/EpubReaderFootnoteSelectActivity.cpp,55,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/reader/EpubReaderMenuActivity.cpp,138,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/reader/EpubReaderMenuActivity.cpp,207,"GUI.drawHeader(renderer, Rect{screen.x, screen.y + metrics.topPadding, screen.width, metrics.headerHeight},"
+src/activities/reader/EpubReaderPercentSelectionActivity.cpp,117,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/reader/KOReaderSyncActivity.cpp,604,"GUI.drawHeader(renderer, Rect{screen.x, screen.y + metrics.topPadding, screen.width, metrics.headerHeight},"
+src/activities/reader/KOReaderSyncActivity.cpp,677,if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
+src/activities/reader/KOReaderSyncActivity.cpp,704,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/reader/KOReaderSyncActivity.cpp,720,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/reader/QrDisplayActivity.cpp,21,if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
+src/activities/reader/QrDisplayActivity.cpp,34,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_DISPLAY_QR), nullptr);"
+src/activities/reader/ReaderUtils.h,264,if (mappedInput.wasBackGesture()) {
+src/activities/reader/ReaderUtils.h,268,"const bool backTriggered = mappedInput.wasLongPressed(MappedInputManager::Button::Back, GO_BACK_OR_HOME_MS) ||"
+src/activities/reader/ReaderUtils.h,269,mappedInput.wasReleased(MappedInputManager::Button::Back);
+src/activities/reader/XtcReaderChapterSelectionActivity.cpp,74,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/settings/ButtonRemapActivity.cpp,42,if (mappedInput.wasBackGesture()) {
+src/activities/settings/ButtonRemapActivity.cpp,122,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_REMAP_FRONT_BUTTONS));"
+src/activities/settings/ClearCacheActivity.cpp,37,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_CLEAR_READING_CACHE),"
+src/activities/settings/ClearCacheActivity.cpp,155,"if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasScreenTapped(x, y)) {"
+src/activities/settings/ClockSyncActivity.cpp,98,"if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasScreenTapped(x, y)) {"
+src/activities/settings/ClockSyncActivity.cpp,110,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_CLOCK_SYNC), nullptr,"
+src/activities/settings/FontDownloadActivity.cpp,56,void FontDownloadActivity::onBackButton() {
+src/activities/settings/FontDownloadActivity.cpp,581,if (mappedInput.isPressed(MappedInputManager::Button::Back) ||
+src/activities/settings/FontDownloadActivity.cpp,582,mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+src/activities/settings/FontDownloadActivity.cpp,861,if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
+src/activities/settings/FontDownloadActivity.cpp,871,if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+src/activities/settings/FontDownloadActivity.cpp,941,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_FONT_BROWSER),"
+src/activities/settings/FontDownloadActivity.h,128,void onBackButton() override;
+src/activities/settings/KOReaderAuthActivity.cpp,88,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},"
+src/activities/settings/KOReaderAuthActivity.cpp,116,if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
+src/activities/settings/OpdsServerListActivity.cpp,110,void OpdsServerListActivity::onBackButton() {
+src/activities/settings/OpdsServerListActivity.h,28,void onBackButton() override;
+src/activities/settings/OtaUpdateActivity.cpp,109,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_UPDATE), nullptr,"
+src/activities/settings/OtaUpdateActivity.cpp,227,"if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasScreenTapped(x, y)) {"
+src/activities/settings/OtaUpdateActivity.cpp,236,"if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasScreenTapped(x, y)) {"
+src/activities/settings/SdFirmwareUpdateActivity.cpp,198,if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
+src/activities/settings/SdFirmwareUpdateActivity.cpp,219,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, headerText, nullptr,"
+src/activities/settings/SettingsActivity.cpp,262,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/settings/SettingsActivity.cpp,263,if (ringPos() > 0 && !mappedInput.wasBackGesture()) {
+src/activities/settings/SettingsActivity.cpp,584,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_SETTINGS_TITLE),"
+src/activities/settings/StatusBarSettingsActivity.cpp,233,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_CUSTOMISE_STATUS_BAR));"
+src/activities/settings/TextSettingsActivity.cpp,190,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/settings/TextSettingsActivity.cpp,276,"GUI.drawHeader(renderer, Rect{0, metrics_.topPadding, pageWidth, metrics_.headerHeight}, tr(STR_TEXT_SETTINGS));"
+src/activities/util/BmpViewerActivity.cpp,300,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/util/FrontlightPanelActivity.cpp,255,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/util/FrontlightPanelActivity.cpp,360,UITheme::getInstance().getTheme().BaseTheme::drawHeader(
+src/activities/util/IntervalSelectionActivity.cpp,124,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/util/KeyboardEntryActivity.cpp,525,if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/activities/util/KeyboardEntryActivity.cpp,526,onCancel();
+src/activities/util/KeyboardEntryActivity.cpp,726,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, title.c_str());"
+src/activities/util/KeyboardEntryActivity.cpp,1006,void KeyboardEntryActivity::onCancel() {
+src/activities/util/KeyboardEntryActivity.h,108,void onCancel();
+src/apps/AppsMenuActivity.cpp,38,void onBackButton() override { activityManager.goHome(HomeMenuItem::APPS); }
+src/apps/DeviceInfoActivity.h,20,if (index == 1) onBackButton();
+src/apps/NativeApp.cpp,13,"void NativeAppActivity::onBackButton() { openApps(renderer, mappedInput); }"
+src/apps/NativeApp.h,24,void onBackButton() override;
+src/weather/WeatherActivity.cpp,94,if (power || mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+src/weather/WeatherActivity.cpp,103,"if (mappedInput.wasNavigationTapInRect(back.x, back.y, back.width, back.height)) {"
+src/weather/WeatherActivity.cpp,108,"mappedInput.wasNavigationTapInRect(update.x, update.y, update.width, update.height)))"
+src/weather/WeatherMenuActivity.cpp,49,void onBackButton() override {
+src/weather/WeatherView.cpp,61,"GUI.drawHeader(renderer, Rect{0, metrics.topPadding, w, metrics.headerHeight},"

@@ -27,6 +27,7 @@ class HomeCoverCache {
     size_t offset = 0;
     size_t bytes = 0;
     bool valid = false;
+    bool drawn = false;
   };
   HalMemory::PsramBuffer coverCache;
   std::array<CachedCover, MAX_COVERS> cachedCovers{};

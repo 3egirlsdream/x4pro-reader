@@ -32,3 +32,11 @@ lib/EpdFont/scripts/output/
 /sdkconfig.*
 sdkconfig.sticky
 flake.*
+
+# Reader state and local device backups must stay outside the public source.
+.crosspoint/
+/device-backup/
+/private-device-backup*/
+/work/
+/outputs/
+/deployment.json

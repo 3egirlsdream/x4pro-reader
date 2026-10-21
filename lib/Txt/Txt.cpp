@@ -30,6 +30,9 @@ bool Txt::load() {
   fileSize = file.size();
   file.close();
 
+  // Optional per-book buffer; never consume internal heap when PSRAM is unavailable.
+  readCacheMemory = HalMemory::allocatePsram(TxtReadCache::CAPACITY);
+  readCache.reset(readCacheMemory.get());
   loaded = true;
   LOG_DBG("TXT", "Loaded TXT file: %s (%zu bytes)", filepath.c_str(), fileSize);
   return true;
@@ -175,15 +178,12 @@ bool Txt::readContent(uint8_t* buffer, size_t offset, size_t length) const {
     return false;
   }
 
-  HalFile file;
-  if (!Storage.openFileForRead("TXT", filepath, file)) {
-    return false;
-  }
-
-  if (!file.seek(offset)) {
-    return false;
-  }
-
-  size_t bytesRead = file.read(buffer, length);
-  return bytesRead > 0;
+  return readCache.read(
+      [](void* context, uint8_t* output, size_t at, size_t count) {
+        const auto* self = static_cast<const Txt*>(context);
+        HalFile file;
+        if (!Storage.openFileForRead("TXT", self->filepath, file) || !file.seek(at)) return false;
+        return file.read(output, count) == static_cast<int>(count);
+      },
+      const_cast<Txt*>(this), fileSize, buffer, offset, length);
 }

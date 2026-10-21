@@ -6,6 +6,9 @@
 #include <WiFi.h>
 #include <esp_sleep.h>
 #include <soc/soc_caps.h>
+#if SOC_PM_SUPPORT_EXT1_WAKEUP
+#include <driver/rtc_io.h>
+#endif
 
 #include <cassert>
 
@@ -66,7 +69,7 @@ void HalPowerManager::setPowerSaving(bool enabled) {
   // Otherwise, no change needed
 }
 
-void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
+void HalPowerManager::startDeepSleep(HalGPIO& gpio, uint32_t timerSeconds) const {
 #ifdef ENABLE_SERIAL_LOG
   // Tear down HWCDC so the host sees a clean disconnect and the peripheral
   // doesn't hold power domains that interfere with USB-powered GPIO wake.
@@ -130,7 +133,35 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
 
   // Waits for the power button to be physically released (so holding it doesn't
   // immediately wake the device again), then arms the wake source and sleeps.
-  freeink::PowerManager::deepSleepUntilPowerButton();
+  freeink::PowerManager::waitForPowerButtonRelease();
+  freeink::PowerManager::armPowerButtonWakeup();
+#if SOC_PM_SUPPORT_EXT1_WAKEUP
+  // Digital pulls do not keep an ext1 pad defined after GPIO isolation.
+  const int8_t pin = BoardConfig::ACTIVE.input.power;
+  if (pin >= 0) {
+    const auto p = static_cast<gpio_num_t>(pin);
+    if (BoardConfig::ACTIVE.input.powerActiveHigh) {
+      rtc_gpio_pullup_dis(p);
+      rtc_gpio_pulldown_en(p);
+    } else {
+      rtc_gpio_pulldown_dis(p);
+      rtc_gpio_pullup_en(p);
+    }
+    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+  }
+#endif
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+  // Other board profiles have different power-latch semantics.
+  if (timerSeconds && BoardConfig::isX4Pro()) {
+    const auto err = esp_sleep_enable_timer_wakeup(uint64_t(timerSeconds) * 1000000ULL);
+    if (err != ESP_OK) LOG_ERR("PWR", "Cannot arm weather timer: %d", err);
+  }
+  freeink::PowerManager::deepSleep();
+}
+
+bool HalPowerManager::readBatteryPercentageChecked(uint16_t& percent) const {
+  static const BatteryMonitor battery;
+  return battery.readPercentageChecked(percent) && percent <= 100;
 }
 
 uint16_t HalPowerManager::getBatteryPercentage() const {

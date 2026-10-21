@@ -65,7 +65,13 @@ struct BuildStats {
 // book over its filename. It reads an existing cache when available; otherwise
 // it stops the normal EPUB parser at the end of <metadata>, before the manifest,
 // without building the reader's spine, TOC, CSS, or section caches.
-bool buildLibraryIndex(const char* rootPath, BuildStats& stats, bool readMetadata = false);
+struct BuildControl {
+  void* context;
+  bool (*continueWork)(void*);
+};
+// Optional cooperative cancellation; checkpoints occur between bounded I/O units.
+bool buildLibraryIndex(const char* rootPath, BuildStats& stats, bool readMetadata = false,
+                       const BuildControl* control = nullptr);
 
 // Live index path, shared by the builder and activity.
 const char* libraryIndexPath();

@@ -66,6 +66,12 @@ class OptionPopup {
 
   bool handleInput(MappedInputManager& input, const std::function<void()>& requestUpdate) {
     if (!active) return false;
+    // Back owns the contact before the generic touch/outside-dismiss path.
+    if (input.wasReleased(MappedInputManager::Button::Back)) {
+      active = false;
+      requestUpdate();
+      return true;
+    }
 
     // Match the render cap: only the first MAX_OPTIONS rows exist on screen,
     // so button wrap-around must not select an invisible option.

@@ -602,7 +602,9 @@ void KOReaderSyncActivity::render(RenderLock&&) {
   Rect screen = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
 
   GUI.drawHeader(renderer, Rect{screen.x, screen.y + metrics.topPadding, screen.width, metrics.headerHeight},
-                 state == SHOWING_RESULT ? tr(STR_PROGRESS_FOUND) : tr(STR_KOREADER_SYNC));
+                 state == SHOWING_RESULT ? tr(STR_PROGRESS_FOUND) : tr(STR_KOREADER_SYNC), nullptr,
+                 state == SHOWING_RESULT || state == NO_REMOTE_PROGRESS || state == NO_CREDENTIALS ||
+                     state == SYNC_FAILED || state == UPLOAD_COMPLETE || state == SYNC_COMPLETE);
 
   int top = screen.y + screen.height / 2 - 40;
   if (state == NO_CREDENTIALS) {

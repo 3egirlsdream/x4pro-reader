@@ -3,6 +3,7 @@
 #include <HalGPIO.h>
 
 #include "util/HomeButtonInput.h"
+#include "util/NavigationTouch.h"
 
 class GfxRenderer;
 namespace freeink {
@@ -72,6 +73,11 @@ class MappedInputManager {
   // off-target so FreeInkUI routing clears its pressed-element state.
   bool wasScreenTouchReleased() const;
   bool wasTapInRect(int x, int y, int width, int height) const;
+  bool wasNavigationTapInRect(int x, int y, int width, int height) const {
+    return !navigationSuppressed && navigationTouch.inRect(x, y, width, height);
+  }
+  // Called when an activity transition is scheduled, before another consumer runs.
+  void suppressNavigationInput() const;
 
   // Combined touch interaction for a band of equal rows with caller-supplied
   // geometry — the shared hit-test for lists the theme helpers above do not
@@ -149,6 +155,10 @@ class MappedInputManager {
   void rememberTouchHeldTime() const;
   void suppressNextRelease(Button button) const;
 
+  mutable NavigationTouch navigationTouch;
+  mutable bool navigationSuppressed = false;
+  mutable uint32_t navigationHeldButtons = 0;
+  mutable bool navigationBackFrame = false;
   mutable HomeButtonInput homeButtonInput;
   mutable HomeButtonAction homeAction = HomeButtonAction::Ignore;
   mutable HomeButtonAction deferredHomeAction = HomeButtonAction::Ignore;

@@ -69,11 +69,8 @@ class TtfEpdFont {
 
   EpdFontFamily family() const;
 
-  // Per-scope reset (mirrors SdCardFont::clearCache): drop every face's cached
-  // page glyphs but KEEP the allocations (byte arena + vector capacity), so a
-  // page turn re-faults into buffers already sized to the book and stops touching
-  // the allocator once converged. Driven by FontCacheManager::clearCache() /
-  // PrewarmScope, symmetrically with the SD fonts.
+  // Explicit eviction: drop cached glyphs while retaining arena allocations.
+  // Ordinary page scopes keep this bounded cache available for later pages.
   void clearCache();
 
   // Heap-critical teardown (mirrors SdCardFont::releaseResidentCaches): free
@@ -84,9 +81,9 @@ class TtfEpdFont {
   // transitions (WiFi + web server, image decode, dictionary, sleep).
   void releaseResidentCaches();
 
-  // Optional batch pre-warm of the REGULAR face (other styles fault lazily).
+  // build resets regular coverage; addCoverage retains each requested style.
   bool build(const char* utf8);
-  bool addCoverage(const char* utf8);
+  bool addCoverage(const char* utf8, uint8_t styleMask = 0x01);
 
  private:
   // A borrowed source file (one per style role that the caller supplies).

@@ -16,6 +16,7 @@
 #include "SilentRestart.h"
 #include "activities/network/WifiSelectionActivity.h"
 #include "activities/util/KeyboardEntryActivity.h"
+#include "components/HeaderBackTapTarget.h"
 #include "components/UIScale.h"
 #include "components/UITheme.h"
 #include "components/icons/headerIcons.h"
@@ -63,7 +64,6 @@ void OpdsBookBrowserActivity::onEnter() {
   app.on(ACTION_ROW, &OpdsBookBrowserActivity::onRowEvent, this);
   app.on(ACTION_SEARCH, &OpdsBookBrowserActivity::onSearchEvent, this);
   app.on(ACTION_CANCEL, &OpdsBookBrowserActivity::onCancelEvent, this);
-  app.on(ACTION_BACK, &OpdsBookBrowserActivity::onBackEvent, this);
   app.setScreen(&OpdsBookBrowserActivity::rootScreen, this);
   requestUpdate();
 
@@ -104,13 +104,6 @@ void OpdsBookBrowserActivity::onSearchEvent(const fui::ActionEvent&, void* user)
   if (self->state != BrowserState::BROWSING) return;
   self->app.clearTapFlash();
   self->launchSearch();
-}
-
-void OpdsBookBrowserActivity::onBackEvent(const fui::ActionEvent&, void* user) {
-  auto* self = static_cast<OpdsBookBrowserActivity*>(user);
-  if (self->state != BrowserState::BROWSING) return;
-  self->app.clearTapFlash();
-  self->navigateBack();
 }
 
 void OpdsBookBrowserActivity::onCancelEvent(const fui::ActionEvent&, void* user) {
@@ -157,6 +150,7 @@ void OpdsBookBrowserActivity::loop() {
       activateSelected();
     } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
       navigateBack();
+      return;
     } else if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
       if (!searchTemplate.empty() && selectorIndex == 0) launchSearch();
     }
@@ -268,6 +262,11 @@ void OpdsBookBrowserActivity::screenHeader(UiScreen& screen, const bool withSear
   header.sidePadding = theme.headerSidePadding;
   header.minTouchSize = theme.minTouchSize;
   const auto frameRect = screen.frame().screen();
+  if (header.leadingAction != fui::NO_ACTION) {
+    HeaderBackTapTarget::set(HeaderBackTapTarget::geometry(frameRect.x, metrics.topPadding, frameRect.width,
+                                                           metrics.headerHeight, header.status.stripHeight,
+                                                           header.leadingSize, header.actionOffsetY));
+  }
   fui::header(screen.frame(),
               fui::Rect{frameRect.x, static_cast<int16_t>(metrics.topPadding), frameRect.width,
                         static_cast<int16_t>(metrics.headerHeight)},

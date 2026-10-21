@@ -459,10 +459,13 @@ bool TtfEpdFont::build(const char* utf8) {
   flushFace(faces_[0]);
   return addCoverage(utf8);
 }
-bool TtfEpdFont::addCoverage(const char* utf8) {
+bool TtfEpdFont::addCoverage(const char* utf8, const uint8_t styleMask) {
   if (!loaded_ || utf8 == nullptr) return false;
-  const auto* p = reinterpret_cast<const unsigned char*>(utf8);
-  while (*p != '\0') faultGlyph(faces_[0], utf8NextCodepoint(&p));
+  for (int style = 0; style < 4; ++style) {
+    if (!(styleMask & (1 << style))) continue;
+    const auto* p = reinterpret_cast<const unsigned char*>(utf8);
+    while (*p != '\0') faultGlyph(faces_[style], utf8NextCodepoint(&p));
+  }
   return true;
 }
 

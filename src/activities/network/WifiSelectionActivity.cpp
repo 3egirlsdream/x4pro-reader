@@ -25,8 +25,11 @@ constexpr fui::ActionId ACTION_PROMPT = 3;
 }  // namespace
 
 WifiSelectionActivity::WifiSelectionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
-                                             const bool autoConnect)
-    : Activity("WifiSelection", renderer, mappedInput), UiAppHost(renderer), allowAutoConnect(autoConnect) {}
+                                             const bool autoConnect, const bool acknowledgeConnection)
+    : Activity("WifiSelection", renderer, mappedInput),
+      UiAppHost(renderer),
+      allowAutoConnect(autoConnect),
+      acknowledgeConnection(acknowledgeConnection) {}
 
 void WifiSelectionActivity::onRowEvent(const fui::ActionEvent& event, void* user) {
   auto* self = static_cast<WifiSelectionActivity*>(user);
@@ -182,6 +185,7 @@ void WifiSelectionActivity::startWifiScan(const bool autoScan) {
   manualNetworkListRequested = false;
   listNav.reset();
   state = WifiSelectionState::SCANNING;
+  scanFailed = false;
   networks.clear();
   // The cached rows point into the cleared networks' strings; drop them too.
   networkStatuses.clear();
@@ -206,6 +210,7 @@ void WifiSelectionActivity::processWifiScanResults() {
   }
 
   if (scanResult == WIFI_SCAN_FAILED) {
+    scanFailed = true;
     networks.clear();
     realNetworkCount = 0;
     appendHiddenNetworkEntry();
@@ -545,7 +550,11 @@ void WifiSelectionActivity::checkConnectionStatus() {
       LOG_DBG("WIFI",
               "Connected with saved/open credentials, "
               "completing immediately");
-      onComplete(true);
+      if (acknowledgeConnection) {
+        state = WifiSelectionState::CONNECTED;
+        requestUpdate();
+      } else
+        onComplete(true);
     }
     return;
   }
@@ -598,12 +607,12 @@ void WifiSelectionActivity::loop() {
 
   // Check connection progress
   if (state == WifiSelectionState::CONNECTING || state == WifiSelectionState::AUTO_CONNECTING) {
+    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+      WiFi.disconnect();
+      onComplete(false);
+      return;
+    }
     if (state == WifiSelectionState::AUTO_CONNECTING) {
-      if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-        WiFi.disconnect();
-        onComplete(false);
-        return;
-      }
       if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
         showNetworkListFromAutoConnect();
         return;
@@ -714,8 +723,11 @@ void WifiSelectionActivity::loop() {
   // Handle connected state (should not normally be reached - connection
   // completes immediately)
   if (state == WifiSelectionState::CONNECTED) {
-    // Safety fallback - immediately complete
-    onComplete(true);
+    int x = 0, y = 0;
+    if (!acknowledgeConnection || mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||
+        mappedInput.wasReleased(MappedInputManager::Button::Back) ||
+        (mappedInput.wasScreenTapped(x, y) && y >= renderer.getScreenHeight() - 100))
+      onComplete(true);
     return;
   }
 
@@ -849,7 +861,10 @@ void WifiSelectionActivity::render(RenderLock&&) {
   GUI.drawSubHeader(
       renderer,
       Rect{screen.x, screen.y + metrics.topPadding + metrics.headerHeight, screen.width, metrics.tabBarHeight},
-      cachedMacAddress.c_str());
+      state == WifiSelectionState::SCANNING                                                ? tr(STR_SCANNING)
+      : state == WifiSelectionState::CONNECTED || state == WifiSelectionState::SAVE_PROMPT ? tr(STR_WIFI_CONNECTED)
+      : scanFailed                                                                         ? tr(STR_WIFI_SCAN_FAILED)
+                   : tr(STR_WIFI_SCAN_COMPLETE));
 
   switch (state) {
     case WifiSelectionState::AUTO_CONNECTING:
@@ -908,25 +923,22 @@ void WifiSelectionActivity::buildListScreen(UiScreen& screen) {
     return;
   }
 
-  if (networks.empty()) {
-    screen.centeredText(tr(STR_NO_NETWORKS), screen.theme().bodyText);
-    if (mappedInput.hasTouch()) {
-      // Touch has no OK button to rescan with; offer the retry on screen instead
-      // of the "Press OK" hint renderNetworkList draws for button boards.
-      const auto& theme = screen.theme();
-      const fui::Rect body = screen.body();
-      const int16_t buttonWidth = static_cast<int16_t>(body.width / 2);
-      const fui::Rect buttonRect{static_cast<int16_t>(body.x + (body.width - buttonWidth) / 2),
-                                 static_cast<int16_t>(body.y + body.height * 2 / 3), buttonWidth, theme.rowHeight};
-      fui::ButtonProps scan;
-      scan.label = tr(STR_RETRY);
-      scan.action = ACTION_SCAN;
-      scan.inputMask = fui::InputTouch;
-      scan.text = theme.bodyText;
-      fui::button(screen.frame(), buttonRect, scan);
-    }
-    return;
+  const auto body = screen.body();
+  if (mappedInput.hasTouch()) {
+    const auto& theme = screen.theme();
+    const int16_t h = std::max<int16_t>(48, theme.rowHeight);
+    fui::ButtonProps scan;
+    scan.label = tr(STR_WIFI_RESCAN);
+    scan.action = ACTION_SCAN;
+    scan.inputMask = fui::InputTouch;
+    scan.text = theme.bodyText;
+    fui::button(screen.frame(), fui::Rect{body.x, static_cast<int16_t>(body.bottom() - h), body.width, h}, scan);
+    screen.setContentMarginFromScreen(fui::Insets{
+        body.y, static_cast<int16_t>(renderer.getScreenWidth() - body.right()),
+        static_cast<int16_t>(renderer.getScreenHeight() - body.bottom() + h + metrics.verticalSpacing), body.x});
   }
+  if (realNetworkCount == 0)
+    screen.centeredText(scanFailed ? tr(STR_WIFI_SCAN_FAILED) : tr(STR_NO_NETWORKS), screen.theme().bodyText);
 
   // networkStatuses/networkRowItems are built once per processWifiScanResults()
   // call (see rebuildNetworkRowItems()) and reused here on every repaint.
@@ -1074,6 +1086,9 @@ void WifiSelectionActivity::renderConnected(const Rect* screen, const ThemeMetri
   UITheme::drawCenteredText(renderer, *screen, UI_10_FONT_ID, top + 40, ipInfo.c_str());
 
   // Use centralized button hints
+  const int buttonY = renderer.getScreenHeight() - 90;
+  renderer.drawRect(screen->x + 20, buttonY, screen->width - 40, 48);
+  UITheme::drawCenteredText(renderer, *screen, UI_12_FONT_ID, buttonY + 10, tr(STR_DONE));
   const auto labels = mappedInput.mapLabels("", tr(STR_DONE), "", "");
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 }

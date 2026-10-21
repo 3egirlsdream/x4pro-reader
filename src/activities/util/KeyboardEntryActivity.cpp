@@ -522,6 +522,10 @@ fui::Rect KeyboardEntryActivity::keyboardRect() const {
 }
 
 void KeyboardEntryActivity::loop() {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    onCancel();
+    return;
+  }
   int tx = 0;
   int ty = 0;
 
@@ -705,10 +709,6 @@ void KeyboardEntryActivity::loop() {
     }
     confirmHeld = false;
     confirmLongHandled = false;
-  }
-
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-    onCancel();
   }
 
   if (hintVisible && !cursorMode && millis() - hintShowTime > 4000) {

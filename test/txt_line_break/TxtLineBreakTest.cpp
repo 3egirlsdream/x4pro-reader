@@ -1,0 +1,88 @@
+#include <CjkLineBreak.h>
+#include <Utf8.h>
+#include <gtest/gtest.h>
+
+#include <random>
+#include <string>
+
+namespace {
+struct Metrics {
+  size_t calls = 0;
+  size_t codepoints = 0;
+};
+int measure(const char* text, void* context) {
+  auto& metrics = *static_cast<Metrics*>(context);
+  ++metrics.calls;
+  int width = 0;
+  auto* cursor = reinterpret_cast<const unsigned char*>(text);
+  while (const uint32_t cp = utf8NextCodepoint(&cursor)) {
+    ++metrics.codepoints;
+    width += cp == ' ' ? 4 : cp < 128 ? 8 : cp == 0x6c49 ? 14 : 16;
+  }
+  return width;
+}
+size_t originalBreak(const std::string& line, int width, Metrics& metrics) {
+  if (measure(line.c_str(), &metrics) <= width) return line.size();
+  size_t pos = line.size();
+  while (pos && measure(line.substr(0, pos).c_str(), &metrics) > width) {
+    const auto space = line.rfind(' ', pos - 1);
+    if (space != std::string::npos && space > 0)
+      pos = space;
+    else {
+      --pos;
+      while (pos && (line[pos] & 0xc0) == 0x80) --pos;
+    }
+  }
+  return pos ? pos : 1;
+}
+}  // namespace
+TEST(TxtLineBreak, LeavesContextualAndNonChineseScriptsOnOriginalPath) {
+  for (const char* line : {"Latin words", "العربية", "한국어", "한가", "かな", "中é", "中\t文", "", "123"})
+    EXPECT_FALSE(txtLayout::isSimpleCjkLine(line)) << line;
+  EXPECT_TRUE(txtLayout::isSimpleCjkLine("第一回：汉字，123。 文字！"));
+  EXPECT_TRUE(txtLayout::isSimpleCjkLine("他说：“宋江——到了。”‘汉字’… pīnyīn ɡ A1"));
+}
+TEST(TxtLineBreak, MatchesOriginalWordPreferenceAndUnicodeBoundaries) {
+  std::mt19937 random(0x123456);
+  const char* tokens[] = {"汉", "字", "，", "。", " ", "  ", "123", "！",
+                          "𠀀", "“",  "”",  "——", "‘", "…",  "ABC", "pīnyīn"};
+  for (int trial = 0; trial < 240; ++trial) {
+    std::string text = "汉";
+    for (size_t i = 0, n = random() % 600; i < n; ++i) text += tokens[random() % std::size(tokens)];
+    const auto saved = text;
+    const int width = 32 + random() % 500;
+    Metrics oldMetrics, newMetrics;
+    EXPECT_EQ(txtLayout::fitCjkLine(text, width, measure, &newMetrics), originalBreak(text, width, oldMetrics))
+        << "trial=" << trial << " width=" << width << " prefix=" << text.substr(0, 150);
+    EXPECT_EQ(text, saved);
+  }
+}
+TEST(TxtLineBreak, WaterMarginDialogueKeepsWorkBounded) {
+  std::string text;
+  for (int i = 0; i < 300; ++i) text += "宋江问道：“武松——你可认得？”他说：‘正是。’ABC…";
+  ASSERT_TRUE(txtLayout::isSimpleCjkLine(text.c_str()));
+  Metrics metrics;
+  const auto pos = txtLayout::fitCjkLine(text, 420, measure, &metrics);
+  EXPECT_GT(pos, 0u);
+  EXPECT_LT(metrics.calls, 20u);
+  EXPECT_LT(metrics.codepoints, 400u);
+}
+TEST(TxtLineBreak, LongChineseParagraphDoesNotMeasureEveryTrailingCharacter) {
+  std::string text;
+  for (int i = 0; i < 1756; ++i) text += "汉";
+  const auto saved = text;
+  Metrics oldMetrics, newMetrics;
+  EXPECT_EQ(txtLayout::fitCjkLine(text, 420, measure, &newMetrics), originalBreak(text, 420, oldMetrics));
+  EXPECT_LT(newMetrics.calls, 20u);
+  EXPECT_GT(oldMetrics.calls, 1700u);
+  EXPECT_LT(newMetrics.codepoints, 300u);
+  EXPECT_EQ(text, saved);
+}
+TEST(TxtLineBreak, EmptyExactFitAndOversizeGlyphAlwaysMakeValidProgress) {
+  Metrics metrics;
+  std::string empty, exact = "汉字", tooWide = "𠀀字";
+  EXPECT_EQ(txtLayout::fitCjkLine(empty, 30, measure, &metrics), 0u);
+  EXPECT_EQ(txtLayout::fitCjkLine(exact, 30, measure, &metrics), exact.size());
+  EXPECT_EQ(txtLayout::fitCjkLine(tooWide, 1, measure, &metrics), 4u);
+  EXPECT_EQ(tooWide, "𠀀字");
+}

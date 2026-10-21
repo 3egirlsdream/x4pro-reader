@@ -65,6 +65,7 @@ add_subdirectory(page_link)
 add_subdirectory(content_opf_parser)
 add_subdirectory(chapter_position)
 add_subdirectory(home_button)
+add_subdirectory(txt_line_break)
 
 add_subdirectory(inflate_stream)
 add_subdirectory(fs_helpers)
@@ -73,3 +74,5 @@ add_subdirectory(absolute_grayscale)
 
 add_subdirectory(sd_card_font)
 add_subdirectory(glyph_bitmap)
+
+add_subdirectory(desktop)

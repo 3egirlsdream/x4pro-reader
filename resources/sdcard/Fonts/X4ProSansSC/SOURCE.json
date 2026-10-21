@@ -1,0 +1,12 @@
+{
+  "source": "https://github.com/google/fonts/tree/main/ofl/notosanssc",
+  "sourceFile": "NotoSansSC[wght].ttf",
+  "sourceSha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
+  "transform": "fonttools 4.67.0; instantiate wght=400; rename family X4Pro Sans SC",
+  "output": "X4ProSansSC-Regular.ttf",
+  "sha256": "b8699e7640a48859562e798b25aaa10837155dfbb5ff918a59a91dfdcb6739d3",
+  "bytes": 10595884,
+  "cmapCodepoints": 30890,
+  "outline": "TrueType glyf; no CFF; no variable axes",
+  "license": "SIL Open Font License 1.1; see LICENSE.txt"
+}

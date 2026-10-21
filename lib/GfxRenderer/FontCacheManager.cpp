@@ -39,11 +39,15 @@ FontCacheManager::FontCacheManager(const std::map<int, EpdFontFamily>& fontMap,
 
 void FontCacheManager::setFontDecompressor(FontDecompressor* d) { fontDecompressor_ = d; }
 
-void FontCacheManager::clearCache() {
+void FontCacheManager::clearPageCaches() {
   if (fontDecompressor_) fontDecompressor_->clearCache();
   for (auto& [id, font] : sdCardFonts_) {
     font->clearCache();
   }
+}
+
+void FontCacheManager::clearCache() {
+  clearPageCaches();
 #if CROSSPOINT_VECTOR_FONTS
   for (auto& [id, font] : ttfFonts_) {
     if (font) font->clearCache();
@@ -66,17 +70,12 @@ void FontCacheManager::releaseSdFontCaches() {
 void FontCacheManager::prewarmCache(int fontId, const char* utf8Text, uint8_t styleMask, bool accumulate) {
   // TTF (vector) font prewarm path. This is the single dispatch every draw path
   // funnels through (reader endScanAndPrewarm, the settings preview, UI text),
-  // so building here covers them all. accumulate=false means "this is the whole
-  // glyph set for this render" → replace; accumulate=true → add incrementally.
-  // styleMask is ignored: a TTF face has no synthesized bold/italic here.
+  // Vector glyphs retain their bounded arenas across pages. Only explicit
+  // eviction, size changes or arena pressure discard previously rasterized text.
 #if CROSSPOINT_VECTOR_FONTS
   auto tit = ttfFonts_.find(fontId);
   if (tit != ttfFonts_.end() && tit->second) {
-    if (accumulate) {
-      tit->second->addCoverage(utf8Text);
-    } else {
-      tit->second->build(utf8Text);
-    }
+    tit->second->addCoverage(utf8Text, styleMask);
     return;
   }
 #endif
@@ -189,7 +188,7 @@ void FontCacheManager::recordText(const char* text, int fontId, EpdFontFamily::S
 
 FontCacheManager::PrewarmScope::PrewarmScope(FontCacheManager& manager) : manager_(&manager) {
   manager_->scanMode_ = ScanMode::Scanning;
-  manager_->clearCache();
+  manager_->clearPageCaches();
   manager_->resetStats();
   manager_->scanCodepointCount_ = 0;
   manager_->scanFontCount_ = 0;
@@ -238,7 +237,7 @@ void FontCacheManager::PrewarmScope::endScanAndPrewarm() {
 FontCacheManager::PrewarmScope::~PrewarmScope() {
   if (active_) {
     endScanAndPrewarm();  // no-op if already called
-    manager_->clearCache();
+    manager_->clearPageCaches();
   }
 }
 

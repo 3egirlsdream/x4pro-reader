@@ -4,6 +4,7 @@
 #include <FsHelpers.h>
 #include <HalStorage.h>
 #include <Memory.h>
+#include <Performance.h>
 
 #include <algorithm>
 
@@ -15,6 +16,7 @@
 #include "SdCardFontSystem.h"
 #include "TxtReaderActivity.h"
 #include "XtcReaderActivity.h"
+#include "desktop/ReadingHistory.h"
 
 ReaderActivity::ReaderActivity(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput,
                                std::string bookPath, const bool allowFastInitialRefresh)
@@ -86,6 +88,10 @@ void ReaderActivity::rememberBookOnceRendered() {
 }
 
 void ReaderActivity::onExit() {
+  if (bookRemembered) {
+    const auto info = getScreenshotInfo();
+    desktop::rememberRead(bookPath, info.totalPages > 0 ? info.progressPercent : -1, isAtEndOfBook());
+  }
   Activity::onExit();
 
   // Keep rebuildable font buffers from pinning the heap between reading sessions.
@@ -197,6 +203,7 @@ void ReaderActivity::loop() {
 }
 
 void ReaderActivity::render(RenderLock&&) {
+  performance::Scope timing(performance::Stage::ReaderFrame);
   if (isAtEndOfBook()) {
     if (!endOfBookOptions) {
       endOfBookOptions = makeUniqueNoThrow<EndOfBookOptions>(renderer);

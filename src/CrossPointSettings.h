@@ -264,7 +264,11 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   int8_t getCharacterSpacing() const { return static_cast<int8_t>(characterSpacing - CHARACTER_SPACING_OFFSET); }
   uint8_t textAntiAliasing = 1;
   // Short power button click behaviour
+#ifdef X4PRO_WEATHER_BUILD
+  uint8_t shortPwrBtn = SLEEP;
+#else
   uint8_t shortPwrBtn = IGNORE;
+#endif
   // X4 Pro: double-click power toggles the frontlight. Disabling frees the
   // power button for shortPwrBtn actions without the double-click wait.
   uint8_t doubleClickPwrLight = 1;
@@ -367,6 +371,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t frontlightRestoreOnWake = 1;
   // Language setting (Language enum index, default 0 = EN)
   uint8_t language = 0;
+  bool weatherChineseDefaultApplied = false;
+  bool weatherClickPowerApplied = false;
   // Keyboard layouts the user can reach, using keyboard_layouts::ALL table bits.
   // 0 means "not configured", resolved to the UI language's layout plus English.
   // Any other value is an explicit choice and is used as-is: the language of the

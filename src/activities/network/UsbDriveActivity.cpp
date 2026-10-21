@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <HalStorage.h>
 #include <I18n.h>
+#include <LibraryBuilder.h>
 
 #include "MappedInputManager.h"
 #include "SilentRestart.h"
@@ -11,6 +12,7 @@
 namespace fui = freeink::ui;
 
 void UsbDriveActivity::onEnter() {
+  library::markLibraryIndexDirty();
   Activity::onEnter();
   resetUi();
   app.setScreen(&UsbDriveActivity::driveScreen, this);
@@ -107,7 +109,8 @@ void UsbDriveActivity::render(RenderLock&&) {
 
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int pageWidth = renderer.getScreenWidth();
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_USB_DRIVE));
+  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_USB_DRIVE), nullptr,
+                 state == State::WaitingForHost || startFailed);
 
   renderUi();
 

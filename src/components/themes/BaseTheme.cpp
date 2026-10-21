@@ -7,6 +7,7 @@
 #include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <Logging.h>
+#include <WiFi.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -26,6 +27,10 @@
 
 // Internal constants
 namespace {
+const char* wifiStatusLabel() {
+  if (WiFi.getMode() == WIFI_OFF) return tr(STR_WIFI_OFF);
+  return WiFi.status() == WL_CONNECTED ? tr(STR_WIFI_CONNECTED) : tr(STR_WIFI_DISCONNECTED);
+}
 constexpr int homeMenuMargin = 20;
 constexpr int homeMarginTop = 30;
 constexpr int subtitleY = 738;
@@ -310,7 +315,7 @@ void BaseTheme::drawSideButtonHints(const GfxRenderer& renderer, const char* top
 // looks like it overhangs the content columns.
 int BaseTheme::headerStatusInset() { return UITheme::getInstance().getMetrics().headerSidePadding + 4; }
 
-void BaseTheme::applyHeaderStatus(const GfxRenderer& renderer, freeink::ui::HeaderProps& props) {
+void BaseTheme::applyHeaderStatus(const GfxRenderer& renderer, freeink::ui::HeaderProps& props, bool forceClock) {
   const ThemeMetrics& metrics = UITheme::getInstance().getMetrics();
   auto& status = props.status;
 
@@ -365,10 +370,25 @@ void BaseTheme::applyHeaderStatus(const GfxRenderer& renderer, freeink::ui::Head
   // (SETTINGS.clockShowInHeader). Themes whose title layout has no room for
   // the clock's left reserve opt out via headerShowsClock.
   static char clockText[10];
-  if (metrics.headerShowsClock && SETTINGS.clockShowInHeader && halClock.isAvailable() &&
-      halClock.formatTime(clockText, sizeof(clockText), SETTINGS.clockFormat == 1)) {
-    status.clockText = clockText;
-  }
+  static char networkAndClock[96];
+  const bool clockShown = (forceClock || (metrics.headerShowsClock && SETTINGS.clockShowInHeader)) &&
+                          halClock.isAvailable() &&
+                          halClock.formatTime(clockText, sizeof(clockText), SETTINGS.clockFormat == 1);
+  snprintf(networkAndClock, sizeof(networkAndClock), "%s%s%s", wifiStatusLabel(), clockShown ? "  " : "",
+           clockShown ? clockText : "");
+  status.clockText = networkAndClock;
+}
+
+void BaseTheme::drawDesktopHeader(const GfxRenderer& renderer, Rect rect) {
+  namespace fui = freeink::ui;
+  const auto spec = uiScaleSpec();
+  fui::GfxRendererFrame<1> ui(renderer, spec.smallFontId, spec.bodyFontId, spec.titleFontId);
+  ui.target.setFont(fui::GfxRendererTarget::FONT_LABEL, SMALL_FONT_ID);
+  fui::HeaderProps props;
+  applyHeaderStatus(renderer, props, true);
+  props.status.clockCentered = false;
+  props.titleOffsetY = 0;
+  fui::header(ui.frame, fui::Rect{int16_t(rect.x), int16_t(rect.y), int16_t(rect.width), int16_t(rect.height)}, props);
 }
 
 void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* title, const char* subtitle,
@@ -416,9 +436,10 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
   if (showBackButton) {
     props.leadingIcon = fui::bitmapFromIcon(icon_header_back_32);
     props.leadingAction = 1;  // any non-NO_ACTION id: paints the button, routing is via HeaderBackTapTarget
-    HeaderBackTapTarget::set(band.x + 4, band.y + 4 + props.actionOffsetY, backBtnSize, backBtnSize);
+    HeaderBackTapTarget::set(HeaderBackTapTarget::geometry(band.x, band.y, band.width, band.height,
+                                                           props.status.stripHeight, backBtnSize, props.actionOffsetY));
   } else {
-    HeaderBackTapTarget::clear();
+    HeaderBackTapTarget::hide();
   }
   props.borderEdges = fui::EdgeBottom;
   props.titleText = tokens.titleText;
@@ -858,6 +879,11 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
 
     leftClusterWidth += batteryWidth;
   }
+
+  const char* network = wifiStatusLabel();
+  const int networkX = leftClusterX + leftClusterWidth + 10;
+  renderer.drawText(SMALL_FONT_ID, networkX, textY, network);
+  leftClusterWidth += 10 + renderer.getTextWidth(SMALL_FONT_ID, network);
 
   // Draw Clock (any board whose RTC probe succeeded)
   if (sb.showsClock() && halClock.isAvailable()) {

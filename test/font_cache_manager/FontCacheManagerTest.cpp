@@ -7,14 +7,14 @@
 #include "FontCacheManager.h"
 #include "FontDecompressor.h"
 #include "SdCardFont.h"
+#include "TtfEpdFont.h"
 
 namespace {
 
 bool countHeapAllocations = false;
 size_t heapAllocationCount = 0;
 
-// TTF fonts are PSRAM-gated and stubbed out on the host (see stubs/TtfEpdFont.h);
-// every manager gets an empty map for that slot.
+// Most cases exercise the SD bitmap path; vector routing has its own case.
 const std::map<int, TtfEpdFont*> kNoTtfFonts;
 
 const SdCardFont::PrewarmCall* findCall(const SdCardFont& font, const uint8_t styleMask) {
@@ -144,4 +144,23 @@ TEST(FontCacheManagerTest, IncrementalPrewarmRequestsAccumulation) {
   manager.prewarmCache(7, "title", 1);
   ASSERT_EQ(1, font.prewarmCallCount);
   EXPECT_TRUE(font.prewarmCalls[0].accumulate);
+}
+TEST(FontCacheManagerTest, VectorPagesRetainCacheAndRespectStyleUntilExplicitEviction) {
+  TtfEpdFont vectorFont;
+  const std::map<int, EpdFontFamily> builtin;
+  const std::map<int, SdCardFont*> sd;
+  const std::map<int, TtfEpdFont*> vectors{{7, &vectorFont}};
+  FontCacheManager manager(builtin, sd, vectors);
+  for (int page = 0; page < 3; ++page) {
+    auto scope = manager.createPrewarmScope();
+    manager.recordText("宋江", 7, EpdFontFamily::BOLD);
+    scope.endScanAndPrewarm();
+    EXPECT_EQ(vectorFont.lastStyle, 0x02);
+  }
+  EXPECT_EQ(vectorFont.warms, 3);
+  EXPECT_EQ(vectorFont.clears, 0);
+  manager.clearCache();
+  EXPECT_EQ(vectorFont.clears, 1);
+  manager.releaseSdFontCaches();
+  EXPECT_EQ(vectorFont.releases, 1);
 }

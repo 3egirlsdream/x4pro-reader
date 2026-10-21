@@ -1,0 +1,43 @@
+{
+  "checkedAt": "2026-10-20",
+  "purpose": "Reference-only source snapshots; not installed or adopted wholesale",
+  "repositories": [
+    {
+      "repo": "ma-r-s/crossplay",
+      "refs": {
+        "HEAD": "12a2526dcf227a84eba7f58a216e2e430332f382",
+        "refs/heads/xteink": "12a2526dcf227a84eba7f58a216e2e430332f382"
+      }
+    },
+    {
+      "repo": "vjFaLk/esphome-xteink",
+      "refs": {
+        "HEAD": "ad3aadca23403285504c4362889bbc5eee9d13e9"
+      }
+    },
+    {
+      "repo": "dito94/CrossDiTo",
+      "refs": {
+        "HEAD": "4506e2e9516dc1330695cb6f4c337e7d12a7fe55"
+      }
+    },
+    {
+      "repo": "aktogde1/xteink-meteo-sleep",
+      "refs": {
+        "HEAD": "b5172f1debe8e2a31fa18aeea4900db6f2d74a30"
+      }
+    },
+    {
+      "repo": "dmellok/tesserae",
+      "refs": {
+        "HEAD": "1b5d1253f8633b215398c93109fcf58da1bfd1d9"
+      }
+    },
+    {
+      "repo": "dmellok/CrossInk",
+      "refs": {
+        "HEAD": "15b2a91a19fee8a0202a62b5cabe62b51d44b42c"
+      }
+    }
+  ]
+}

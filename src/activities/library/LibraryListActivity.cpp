@@ -18,6 +18,7 @@
 #include "RecentBooksStore.h"
 #include "activities/util/ConfirmationActivity.h"
 #include "activities/util/KeyboardEntryActivity.h"
+#include "components/HeaderBackTapTarget.h"
 #include "components/UIScale.h"
 #include "components/UITheme.h"
 #include "components/icons/headerIcons.h"
@@ -82,22 +83,20 @@ void LibraryListActivity::onEnter() {
   UiTabListActivity::onEnter();
   app.on(ACTION_SEARCH, &LibraryListActivity::searchActionTrampoline, this);
   app.on(ACTION_REBUILD, &LibraryListActivity::rebuildActionTrampoline, this);
-  app.on(ACTION_BACK, &LibraryListActivity::backActionTrampoline, this);
 
   // Recent is backed by the resident store. Prune before opening the index so
   // its persistence write never overlaps the long-lived index reader.
   if (RECENT_BOOKS.pruneMissing()) RECENT_BOOKS.saveToFile();
 
-  // Rebuild when the index is missing, invalid, or was built with the other
-  // metadata mode. Otherwise entering the screen stays instant.
-  const bool readMetadata = SETTINGS.libraryUseMetadata != 0;
-  const bool rebuildNeeded = library::isLibraryIndexDirty() || !index.open(library::libraryIndexPath()) ||
-                             index.header().metadataEnabled != readMetadata;
+  // Enter with the retained index; build a missing/stale one after the UI has published.
+  const bool rebuildNeeded = library::isLibraryIndexDirty() || !index.open(library::libraryIndexPath());
   if (rebuildNeeded) {
     index.close();
-    GUI.drawPopup(renderer, tr(STR_LIBRARY_REBUILDING));
-    rebuildIndex();
-    if (!index.open(library::libraryIndexPath())) LOG_ERR("LIB", "cannot open library index");
+    indexLoader = makeUniqueNoThrow<desktop::Shelf>();
+    if (indexLoader)
+      indexLoader->begin();
+    else
+      LOG_ERR("LIB", "OOM: incremental index loader");
   }
   degraded = index.isOpen() && index.ranksDegraded();
   if (index.isOpen() && index.dedupDegraded()) {
@@ -111,7 +110,25 @@ void LibraryListActivity::onEnter() {
   requestUpdate(true);
 }
 
+void LibraryListActivity::loop() {
+  UiTabListActivity::loop();
+  if (!indexLoader || !routingReady()) return;
+  RenderLock lock(RenderLock::Mode::Try);
+  if (!lock.ownsLock()) return;
+  indexLoader->step(0);
+  if (!indexLoader->loading()) {
+    const bool failed = indexLoader->failed();
+    indexLoader.reset();
+    if (!failed && index.open(library::libraryIndexPath())) {
+      degraded = index.ranksDegraded();
+      resolvePinned();
+    }
+    requestUpdate();
+  }
+}
+
 void LibraryListActivity::onExit() {
+  indexLoader.reset();
   index.close();
   Activity::onExit();
 }
@@ -309,6 +326,7 @@ void LibraryListActivity::showRecentBookOptions(const int entry) {
 // wants the card to itself, and the render task must not read the index (or
 // the filter) around it.
 void LibraryListActivity::promptRebuildIndex() {
+  if (indexLoader) return;
   RenderLock lock(*this);
   GUI.drawPopup(renderer, tr(STR_LIBRARY_REBUILDING));
   index.close();
@@ -659,7 +677,7 @@ void LibraryListActivity::handleBackAction() {
     requestUpdate();
   } else if (groupsCollapsed) {
     restoreExpandedList();
-  } else if (!tabsFocused() && !degraded) {
+  } else if (!tabsFocused() && !degraded && !mappedInput.wasBackGesture()) {
     // Keep the current list and viewport while returning focus to the tabs.
     nav.selected = 0;
     requestUpdate();
@@ -670,10 +688,6 @@ void LibraryListActivity::handleBackAction() {
 
 void LibraryListActivity::searchActionTrampoline(const fui::ActionEvent&, void* user) {
   static_cast<LibraryListActivity*>(user)->openSearch();
-}
-
-void LibraryListActivity::backActionTrampoline(const fui::ActionEvent&, void* user) {
-  static_cast<LibraryListActivity*>(user)->handleBackAction();
 }
 
 void LibraryListActivity::rebuildActionTrampoline(const fui::ActionEvent&, void* user) {
@@ -943,6 +957,11 @@ void LibraryListActivity::buildHeader(UiScreen& screen) {
     // unified band.
   }
   const auto frameRect = screen.frame().screen();
+  if (header.leadingAction != fui::NO_ACTION) {
+    HeaderBackTapTarget::set(HeaderBackTapTarget::geometry(frameRect.x, metrics.topPadding, frameRect.width,
+                                                           metrics.headerHeight, header.status.stripHeight,
+                                                           header.leadingSize, header.actionOffsetY));
+  }
   // Header and tabs share a screen-relative boundary, independent of bezel insets.
   fui::header(screen.frame(),
               fui::Rect{frameRect.x, static_cast<int16_t>(metrics.topPadding), frameRect.width,
@@ -960,6 +979,10 @@ void LibraryListActivity::buildScreen(UiScreen& screen) {
                                                 static_cast<int16_t>(metrics.buttonHintsHeight + readoutReserved), 0});
 
   if (!degraded) buildTabBar(screen);
+  if (indexLoader) {
+    screen.centeredText(tr(STR_LIBRARY_REBUILDING));
+    return;
+  }
   if (bookRowCount() == 0) {
     const char* message = tr(STR_LIBRARY_NO_RESULTS);
     if (filterFailed) {

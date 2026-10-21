@@ -1,9 +1,12 @@
 #pragma once
 
+#include <HalMemory.h>
 #include <HalStorage.h>
 
 #include <memory>
 #include <string>
+
+#include "TxtReadCache.h"
 
 class Txt {
   std::string filepath;
@@ -11,6 +14,8 @@ class Txt {
   std::string cachePath;
   bool loaded = false;
   size_t fileSize = 0;
+  HalMemory::PsramBuffer readCacheMemory;
+  mutable TxtReadCache readCache;
 
  public:
   explicit Txt(std::string path, std::string cacheBasePath);

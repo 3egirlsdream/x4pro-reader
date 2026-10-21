@@ -4,6 +4,7 @@
 #include <HalStorage.h>
 #include <Logging.h>
 #include <Memory.h>
+#include <Performance.h>
 #include <TtfEpdFont.h>
 #include <esp_heap_caps.h>
 
@@ -69,6 +70,7 @@ constexpr UiFontSize kUiFontSizes[] = {
 }  // namespace
 
 void SdCardFontSystem::begin(GfxRenderer& renderer) {
+  performance::Scope timing(performance::Stage::FontInit);
   registry_.discover();
 
   // Register this system as the SD font ID resolver in settings.
@@ -109,6 +111,7 @@ void SdCardFontSystem::begin(GfxRenderer& renderer) {
 }
 
 void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) {
+  performance::Scope timing(performance::Stage::FontEnsure);
   // If the web server (or another task) installed/deleted fonts, re-discover.
   // Track whether we just re-discovered so we can force a reload below even
   // when the wanted family/size still maps to the same point size — the file
@@ -249,6 +252,8 @@ void SdCardFontSystem::freeTtfSources() {
   for (auto& s : ttfSources_) {
     s.bytes.clear();
     freeink::font::PsramVector<uint8_t>().swap(s.bytes);  // actually release
+    s.readCache.reset(nullptr);
+    s.readBlocks.reset();
     if (s.file) s.file.close();
     s.streamed = false;
     s.size = 0;
@@ -330,12 +335,13 @@ bool SdCardFontSystem::openTtfSource(const uint8_t style, const std::string& pat
   } else {
     s.file = std::move(f);  // kept open; prefixRead() reads it on demand
     s.streamed = true;
-    // Cache the file's head in PSRAM: an sfnt's per-glyph-fault tables (cmap,
-    // loca, hmtx) sit before the multi-MB glyf table, so serving the first
-    // 1 MB from RAM turns each glyph fault's 4-6 scattered SD seeks into one
-    // glyf read. Gated per source so a small-PSRAM board takes what fits.
-    static constexpr size_t kStreamPrefix = 1024 * 1024;
-    const size_t prefix = len < kStreamPrefix ? len : kStreamPrefix;
+    // 8 KB per streamed source avoids repeated small outline reads during
+    // metrics/rasterization and cold wake. Null PSRAM allocation streams directly.
+    s.readBlocks = HalMemory::allocatePsram(FontReadCache::STORAGE_BYTES);
+    s.readCache.reset(s.readBlocks.get());
+    // Cache metric tables through their last byte, capped at 1 MB, instead
+    // of loading unrelated outline bytes on every cold boot.
+    const size_t prefix = FontReadCache::prefixSize(&SdCardFontRegistry::halFileRead, &s.file, len);
     if (heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) > prefix + 256 * 1024) {
       s.bytes.resize(prefix);
       if (s.file.seek(0) && static_cast<size_t>(s.file.read(s.bytes.data(), prefix)) == prefix) {
@@ -357,16 +363,17 @@ bool SdCardFontSystem::openTtfSource(const uint8_t style, const std::string& pat
 unsigned long SdCardFontSystem::prefixRead(void* ctx, const unsigned long offset, unsigned char* buffer,
                                            const unsigned long count) {
   auto* s = static_cast<TtfSource*>(ctx);
+  if (!count) return offset <= s->size ? 0 : 1;
+  if (offset > s->size || count > s->size - offset || !buffer) return 0;
   const unsigned long cached = s->bytes.size();
   if (offset < cached) {
-    const unsigned long fromCache = (offset + count <= cached) ? count : cached - offset;
-    if (count == 0) return 0;  // seek probe
+    const unsigned long fromCache = std::min<unsigned long>(count, cached - offset);
     memcpy(buffer, s->bytes.data() + offset, fromCache);
     if (fromCache == count) return count;
-    return fromCache +
-           SdCardFontRegistry::halFileRead(&s->file, offset + fromCache, buffer + fromCache, count - fromCache);
+    return fromCache + s->readCache.read(&SdCardFontRegistry::halFileRead, &s->file, s->size, offset + fromCache,
+                                         buffer + fromCache, count - fromCache);
   }
-  return SdCardFontRegistry::halFileRead(&s->file, offset, buffer, count);
+  return s->readCache.read(&SdCardFontRegistry::halFileRead, &s->file, s->size, offset, buffer, count);
 }
 
 void SdCardFontSystem::addTtfSources(TtfEpdFont& font) {

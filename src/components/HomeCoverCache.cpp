@@ -44,7 +44,7 @@ bool HomeCoverCache::paint(fui::Rect rect, size_t index, const std::string& path
   if (coverCache && cached.valid && cached.rect.x == rect.x && cached.rect.y == rect.y &&
       cached.rect.width == rect.width && cached.rect.height == rect.height &&
       renderer.copyBufferToRegion(rect.x, rect.y, rect.width, rect.height, cacheData + cached.offset, cached.bytes)) {
-    return true;
+    return cached.drawn;
   }
   cached.valid = false;
   bool drawn = false;
@@ -67,10 +67,7 @@ bool HomeCoverCache::paint(fui::Rect rect, size_t index, const std::string& path
     }
     coverFile.close();
   }
-  if (!drawn) {
-    GUI.drawCoverPlaceholder(renderer, Rect{rect.x, rect.y, rect.width, rect.height});
-    renderer.drawRect(rect.x, rect.y, rect.width, rect.height);
-  }
+  cached.drawn = drawn;
   if (coverCache) {
     const size_t needed = renderer.getRegionByteSize(rect.x, rect.y, rect.width, rect.height);
     if (needed > cached.bytes && needed <= coverCacheCapacity - coverCacheUsed) {
@@ -84,5 +81,5 @@ bool HomeCoverCache::paint(fui::Rect rect, size_t index, const std::string& path
           renderer.copyRegionToBuffer(rect.x, rect.y, rect.width, rect.height, cacheData + cached.offset, cached.bytes);
     }
   }
-  return true;  // The cover slot is painted, including fallback art.
+  return drawn;
 }

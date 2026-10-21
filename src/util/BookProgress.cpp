@@ -37,7 +37,7 @@ int loadBookProgress(const std::string& path) {
     if (spine == epub->getSpineItemsCount()) return 100;
     if (spine > epub->getSpineItemsCount()) return -1;
     const float fraction = total > 0 && page != UINT16_MAX ? std::clamp(float(page) / total, 0.0f, 1.0f) : 0;
-    return std::clamp(static_cast<int>(epub->calculateProgress(spine, fraction) * 100 + 0.5f), 0, 100);
+    return std::clamp(static_cast<int>(epub->calculateProgress(spine, fraction) * 100 + 0.5f), 0, 99);
   }
   if (FsHelpers::hasXtcExtension(path)) {
     auto xtc = makeUniqueNoThrow<Xtc>(path, "/.crosspoint");
@@ -52,7 +52,7 @@ int loadBookProgress(const std::string& path) {
     const uint32_t page = readLe32(data);
     if (xtc->getPageCount() == 0) return -1;
     if (page >= xtc->getPageCount()) return 100;
-    return xtc->calculateProgress(page);
+    return std::min<int>(99, xtc->calculateProgress(page));
   }
   if (FsHelpers::hasTxtExtension(path) || FsHelpers::hasMarkdownExtension(path)) {
     Txt txt(path, "/.crosspoint");
@@ -66,12 +66,21 @@ int loadBookProgress(const std::string& path) {
     if (!Storage.openFileForRead("HOME", txt.getCachePath() + "/index.bin", index) ||
         index.read(header, sizeof(header)) != sizeof(header))
       return -1;
-    if (readLe32(header) != 0x54585449 || header[4] != 3) return -1;
-    const uint32_t pages = readLe32(header + 26);
+    if (readLe32(header) != 0x54585449 || (header[4] != 3 && header[4] != 4)) return -1;
+    const uint32_t flags = readLe32(header + 26);
+    const uint32_t pages = header[4] == 3 ? flags : (index.size() - sizeof(header)) / 4;
+    const bool complete = header[4] == 3 || (flags & 0x80000000U);
     if (pages == 0 || pages > (index.size() - sizeof(header)) / 4) return -1;
     HalFile source;
-    if (!Storage.openFileForRead("HOME", path, source) || source.size() != readLe32(header + 5)) return -1;
-    return std::min<int>(100, static_cast<int>((page + 1) * 100ULL / pages));
+    const uint32_t sourceSize = readLe32(header + 5);
+    if (!Storage.openFileForRead("HOME", path, source) || source.size() != sourceSize || !sourceSize) return -1;
+    if (page >= pages) return complete && page == pages ? 100 : -1;
+    // v4 is a prefix index: byte offset is exact even when the final page count is unknown.
+    uint8_t offset[4];
+    if (!index.seek(sizeof(header) + page * 4) || index.read(offset, 4) != 4) return -1;
+    const uint32_t bytes = readLe32(offset);
+    if (bytes >= sourceSize) return -1;
+    return std::min<int>(99, bytes * 100ULL / sourceSize);
   }
   return -1;
 }
