@@ -6,6 +6,8 @@
 
 #include <set>
 
+#include "activities/InputQueue.h"
+#include "activities/reader/ProgressFile.h"
 #include "desktop/DesktopShelf.h"
 #include "desktop/ReadingHistory.h"
 #include "util/BookProgress.h"
@@ -259,4 +261,49 @@ TEST(Desktop, FormatCapacityAndDeletingLastPageAreBounded) {
   s.removeMissing();
   EXPECT_EQ(s.currentPage(), 0);
   EXPECT_EQ(s.visibleCount(), 6);
+}
+
+TEST(Desktop, ProgressRotationPreservesCommittedOrReadyData) {
+  const std::string cache = "/cache";
+  for (int fail = 0; fail < 3; ++fail) {
+    fake::reset();
+    uint8_t record[4]{1};
+    ASSERT_TRUE(ProgressFile::writeAtomic(cache, record, sizeof(record)));
+    record[0] = 2;
+    fake::failRename = fail;
+    EXPECT_FALSE(ProgressFile::writeAtomic(cache, record, sizeof(record)));
+    HalFile file;
+    ASSERT_TRUE(ProgressFile::open(cache, ProgressFile::Format::Xtc, file));
+    ASSERT_EQ(file.read(record, 4), 4);
+    EXPECT_EQ(record[0], fail == 2 ? 2 : 1);
+    file.close();
+    record[0] = 3;
+    ASSERT_TRUE(ProgressFile::writeAtomic(cache, record, sizeof(record)));
+  }
+}
+TEST(Desktop, DelayedInputKeepsFirstCommandAndOrder) {
+  InputQueue<int, 2> queue;
+  queue.push(1);
+  queue.push(2);
+  queue.push(3);
+  EXPECT_EQ(queue.pop(), 1);
+  queue.push(4);
+  EXPECT_EQ(queue.pop(), 2);
+  EXPECT_EQ(queue.pop(), 4);
+  EXPECT_TRUE(queue.empty());
+}
+TEST(Desktop, ClosingHomeDoesNotWaitForQueuedCoverOrRetainActivity) {
+  makeLibrary(0);
+  fake::add("/one.epub");
+  library::BuildStats stats;
+  ASSERT_TRUE(library::buildLibraryIndex("/", stats));
+  {
+    Shelf shelf;
+    shelf.begin();
+    ready(shelf);
+    shelf.step(144);
+    ASSERT_NE(queuedTask, nullptr);
+  }
+  runQueuedTask();
+  EXPECT_EQ(generatedCovers, 0);
 }

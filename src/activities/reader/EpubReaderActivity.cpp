@@ -207,7 +207,7 @@ bool EpubReaderActivity::loadBook() {
   epub->setupCacheDir();
 
   HalFile f;
-  if (Storage.openFileForRead("ERS", epub->getCachePath() + "/progress.bin", f)) {
+  if (ProgressFile::open(epub->getCachePath(), ProgressFile::Format::Epub, f)) {
     uint8_t data[10];
     int dataSize = f.read(data, sizeof(data));
     if (dataSize == 4 || dataSize == 6 || dataSize == 10) {

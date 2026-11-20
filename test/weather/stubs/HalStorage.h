@@ -21,6 +21,10 @@ struct HalFile {
     return n;
   }
   void flush() {}
+  bool close() {
+    data = nullptr;
+    return true;
+  }
 };
 struct FakeStorage {
   std::map<std::string, std::string> files;

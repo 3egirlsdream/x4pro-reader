@@ -26,6 +26,7 @@ def run(output):
 #include <algorithm>
 #include <cstdlib>
 #include <Performance.h>
+namespace desktop {struct Shelf {static void quiesceCovers() {}};}
 namespace performance {bool saveSnapshot(){return true;}}
 '''+mapped+'\n'+method('lib/GfxRenderer/GfxRenderer.cpp','void GfxRenderer::tapToLogical(')
     themes=[]

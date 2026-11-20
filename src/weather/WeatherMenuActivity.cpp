@@ -13,6 +13,8 @@
 namespace weather {
 namespace {
 class CityPicker final : public UiListActivity {
+  bool saveFailed = false;
+
  public:
   CityPicker(GfxRenderer& r, MappedInputManager& input) : UiListActivity("WeatherCities", r, input) {}
 
@@ -45,7 +47,9 @@ class CityPicker final : public UiListActivity {
     }
     return nullptr;
   }
-  const char* headerTitle() const override { return selectedProvince ? selectedProvince : tr(STR_WX_CITY); }
+  const char* headerTitle() const override {
+    return saveFailed ? tr(STR_SAVE_PROGRESS_FAILED) : selectedProvince ? selectedProvince : tr(STR_WX_CITY);
+  }
   void onBackButton() override {
     if (selectedProvince) {
       selectedProvince = nullptr;
@@ -64,9 +68,12 @@ class CityPicker final : public UiListActivity {
     } else {
       {
         RenderLock lock;
-        Store::instance().selectCity(city->id);
+        saveFailed = !Store::instance().selectCity(city->id);
       }
-      finish();
+      if (saveFailed)
+        requestUpdate();
+      else
+        finish();
     }
   }
   void buildScreen(UiScreen& screen) override {

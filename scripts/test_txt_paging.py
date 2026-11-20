@@ -94,13 +94,14 @@ struct BidiUtils {static constexpr int RTL_PARAGRAPH_PROBE_DEPTH=10;static bool 
 namespace ReaderUtils {inline void displayBaseWithRefreshCycle(GfxRenderer&,int&){}inline void displayWithRefreshCycle(GfxRenderer&,int&){} template<class F>void renderAntiAliased(GfxRenderer&,F f){f();}}
 inline size_t progressWrites=0;
 inline bool failProgress=false;
-namespace ProgressFile {inline bool writeAtomic(const std::string&p,const uint8_t*b,size_t n){if(failProgress)return false;++progressWrites;Storage.files[p+"/progress.bin"].assign((const char*)b,n);return true;}}
+namespace ProgressFile {enum class Format{Txt};inline bool open(const std::string&p,Format,HalFile&f){return Storage.openFileForRead("TRS",p+"/progress.bin",f);}
+inline bool writeAtomic(const std::string&p,const uint8_t*b,size_t n){if(failProgress)return false;++progressWrites;Storage.files[p+"/progress.bin"].assign((const char*)b,n);return true;}}
 template<class T>requires std::is_array_v<T> auto makeUniqueNoThrow(size_t n){return std::unique_ptr<T>(new(std::nothrow)std::remove_extent_t<T>[n]);}
 template<class T,class...A>requires (!std::is_array_v<T>) auto makeUniqueNoThrow(A&&...a){return std::unique_ptr<T>(new(std::nothrow)T(std::forward<A>(a)...));}
 class ReaderActivity {
  protected:GfxRenderer&renderer;MappedInputManager&mappedInput;std::string bookPath;int pagesUntilFullRefresh=0;
  ReaderActivity(const char*,GfxRenderer&r,MappedInputManager&m,std::string p,bool):renderer(r),mappedInput(m),bookPath(p){}
- virtual bool loadBook()=0;virtual std::string getBookTitle()const=0;virtual void renderBook()=0;void markPageRendered(){}
+ virtual bool loadBook()=0;virtual std::string getBookTitle()const=0;virtual void renderBook()=0;void markPageRendered(){} void requestUpdate(){}
  public:virtual ~ReaderActivity()=default;void onEnter(){loadBook();}void render(RenderLock&&){renderBook();}
  virtual bool pageTurn(bool)=0;virtual bool skipPages(int)=0;virtual bool isAtEndOfBook()const=0;virtual void onReturnFromEndOfBook()=0;virtual ScreenshotInfo getScreenshotInfo()const=0;
 };
@@ -137,8 +138,22 @@ int main(int argc,char**argv) {
  assert(resumed.skipPages(-10));resumed.render(RenderLock{});assert(resumed.getScreenshotInfo().currentPage==expected);
  Storage.files["/tiny.txt"]="一二三四五六七八九十。";
  TxtReaderActivity tiny(gfx,input,"/tiny.txt",false);tiny.onEnter();tiny.render(RenderLock{});assert(tiny.pageTurn(true));assert(tiny.isAtEndOfBook());tiny.onReturnFromEndOfBook();assert(!tiny.isAtEndOfBook());
+ const auto beforeReflow=Storage.files["/.crosspoint/large.txt/progress.bin"];
  Storage.files["/.crosspoint/large.txt/index.bin"]=std::string(30,'x');
  TxtReaderActivity damaged(gfx,input,"/large.txt",false);damaged.onEnter();damaged.render(RenderLock{});assert(!damaged.isAtEndOfBook());
+ for(int i=0;i<expected+5;++i) damaged.render(RenderLock{});
+ assert(damaged.getScreenshotInfo().currentPage==expected && gfx.drawn==page);
+ assert(Storage.files["/.crosspoint/large.txt/progress.bin"]==beforeReflow);
+ auto legacy=beforeReflow.substr(0,4);
+ Storage.files["/.crosspoint/large.txt/progress.bin"]=legacy;
+ SETTINGS.screenMargin+=8;
+ TxtReaderActivity reflow(gfx,input,"/large.txt",false);reflow.onEnter();
+ for(int i=0;i<expected+10;++i)reflow.render(RenderLock{});
+ const auto migrated=Storage.files["/.crosspoint/large.txt/progress.bin"];
+ uint32_t previousOffset=0,newOffset=0;
+ memcpy(&previousOffset,beforeReflow.data()+4,4);memcpy(&newOffset,migrated.data()+4,4);
+ assert(migrated.size()==12 && newOffset>0 && newOffset<=previousOffset);
+ SETTINGS.screenMargin-=8;
  Storage.files["/fail.txt"]=book;
  TxtReaderActivity failure(gfx,input,"/fail.txt",false);failure.onEnter();
  const auto beforeFailure=progressWrites;failWrite=true;failure.render(RenderLock{});assert(progressWrites==beforeFailure);

@@ -50,14 +50,14 @@ void MinesweeperActivity::act() {
                                                                     : game.reveal(cursor);
   if (didChange) update(true);
 }
-void MinesweeperActivity::inputGame() {
-  if (mappedInput.wasLongPressed(Button::Up, 700)) {
+void MinesweeperActivity::inputGame(const GameInput& event) {
+  if (event.longUp) {
     flagMode = !flagMode;
     update();
     return;
   }
-  int x = 0, y = 0;
-  if (mappedInput.wasScreenLongPress(x, y)) {
+  const int x = event.x, y = event.y;
+  if (event.hold) {
     const int index = hit(x, y);
     if (index >= 0) {
       const bool selected = cursor != index;
@@ -69,7 +69,7 @@ void MinesweeperActivity::inputGame() {
     }
     return;
   }
-  if (mappedInput.wasScreenTapped(x, y)) {
+  if (event.tap) {
     const int bottom = boardY + unit * game.width();
     if (x >= safe.x + 12 && x < safe.x + safe.width - 12 && y >= bottom + 12 && y < bottom + 56) {
       flagMode = !flagMode;
@@ -87,15 +87,15 @@ void MinesweeperActivity::inputGame() {
     }
   }
   int next = cursor;
-  if (mappedInput.wasReleased(Button::Up)) next = (cursor + game.count() - 1) % game.count();
-  if (mappedInput.wasReleased(Button::Down)) next = (cursor + 1) % game.count();
-  if (mappedInput.wasReleased(Button::Left) && cursor % game.width()) next = cursor - 1;
-  if (mappedInput.wasReleased(Button::Right) && cursor % game.width() < game.width() - 1) next = cursor + 1;
+  if (event.released(Button::Up)) next = (cursor + game.count() - 1) % game.count();
+  if (event.released(Button::Down)) next = (cursor + 1) % game.count();
+  if (event.released(Button::Left) && cursor % game.width()) next = cursor - 1;
+  if (event.released(Button::Right) && cursor % game.width() < game.width() - 1) next = cursor + 1;
   if (next != cursor) {
     cursor = next;
     update();
   }
-  if (mappedInput.wasReleased(Button::Confirm)) act();
+  if (event.released(Button::Confirm)) act();
 }
 void MinesweeperActivity::drawGame() {
   char text[96];

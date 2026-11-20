@@ -10,6 +10,8 @@
 
 #include <algorithm>
 
+#include "activities/reader/ProgressFile.h"
+
 namespace {
 uint32_t readLe32(const uint8_t* p) {
   return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
@@ -27,7 +29,7 @@ int loadBookProgress(const std::string& path) {
     }
     if (!epub->load(false, true)) return -1;
     HalFile file;
-    if (!Storage.openFileForRead("HOME", epub->getCachePath() + "/progress.bin", file)) return -1;
+    if (!ProgressFile::open(epub->getCachePath(), ProgressFile::Format::Epub, file)) return -1;
     const int size = file.read(data, sizeof(data));
     if (size != 4 && size != 6 && size != 10) return -1;
     const int spine = data[0] | (data[1] << 8);
@@ -47,8 +49,7 @@ int loadBookProgress(const std::string& path) {
     }
     if (!xtc->load()) return -1;
     HalFile file;
-    if (!Storage.openFileForRead("HOME", xtc->getCachePath() + "/progress.bin", file) || file.read(data, 4) != 4)
-      return -1;
+    if (!ProgressFile::open(xtc->getCachePath(), ProgressFile::Format::Xtc, file) || file.read(data, 4) != 4) return -1;
     const uint32_t page = readLe32(data);
     if (xtc->getPageCount() == 0) return -1;
     if (page >= xtc->getPageCount()) return 100;
@@ -57,9 +58,15 @@ int loadBookProgress(const std::string& path) {
   if (FsHelpers::hasTxtExtension(path) || FsHelpers::hasMarkdownExtension(path)) {
     Txt txt(path, "/.crosspoint");
     HalFile file;
-    if (!Storage.openFileForRead("HOME", txt.getCachePath() + "/progress.bin", file) || file.read(data, 4) != 4)
+    if (!ProgressFile::open(txt.getCachePath(), ProgressFile::Format::Txt, file) || file.read(data, 4) != 4) return -1;
+    const uint32_t page = readLe32(data);
+    if (file.size() == 12 && file.read(data, 8) == 8) {
+      const uint32_t offset = readLe32(data), size = readLe32(data + 4);
+      HalFile source;
+      if (size && offset < size && Storage.openFileForRead("HOME", path, source) && source.size() == size)
+        return std::min<int>(99, offset * 100ULL / size);
       return -1;
-    const uint32_t page = data[0] | (data[1] << 8);
+    }
     HalFile index;
     // TXT index v3: magic, version, file size, four layout fields, alignment, page count.
     uint8_t header[30];

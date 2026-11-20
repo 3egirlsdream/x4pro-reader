@@ -26,6 +26,8 @@ class TxtReaderActivity final : public ReaderActivity {
   size_t savedIndexEntries = 0;
   bool indexHeaderWritten = false;
   uint32_t layoutMillis = 0;
+  uint32_t restoreOffset = UINT32_MAX, restorePage = 0;
+  bool restorePreview = false;
   int loadedPage = -1;
   size_t loadedNextOffset = 0;
   int savedProgressPage = -1;

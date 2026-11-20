@@ -57,19 +57,23 @@ void Store::load() {
     hasCache = snapshotFromJson(doc.as<JsonVariantConst>(), snapshot) && snapshot.cityId == settings.cityId;
   if (!hasCache) settings.enabled = false;
 }
-bool Store::saveSettings() const {
+static bool writeSettings(const Settings& settings, const char* name, int32_t latitude, int32_t longitude) {
   JsonDocument doc;
   doc["schema"] = 1;
   doc["cityId"] = settings.cityId;
   doc["intervalMinutes"] = settings.intervalMinutes;
   doc["enabled"] = settings.enabled;
   doc["batteryPaused"] = settings.batteryPaused;
-  if (customCity.id && customCity.id == settings.cityId) {
-    doc["locationName"] = customName;
-    doc["latitudeE5"] = customLatitudeE5;
-    doc["longitudeE5"] = customLongitudeE5;
+  if (name) {
+    doc["locationName"] = name;
+    doc["latitudeE5"] = latitude;
+    doc["longitudeE5"] = longitude;
   }
   return appStorage::save("weather", "settings", doc);
+}
+bool Store::saveSettings() const {
+  return writeSettings(settings, customCity.id && customCity.id == settings.cityId ? customName : nullptr,
+                       customLatitudeE5, customLongitudeE5);
 }
 bool Store::acceptSnapshot(const Snapshot& value) {
   if (value.cityId != settings.cityId || !validSnapshot(value)) return false;
@@ -81,6 +85,20 @@ bool Store::acceptSnapshot(const Snapshot& value) {
   return true;
 }
 bool Store::canEnable() const { return city() && hasCache && validSnapshot(snapshot); }
+bool Store::saveDiagnostic(const UpdateDiagnostic& value) const {
+  JsonDocument doc;
+  doc["schema"] = 1;
+  doc["stage"] = static_cast<unsigned>(value.stage);
+  doc["result"] = static_cast<unsigned>(value.result);
+  doc["elapsedMs"] = value.elapsedMs;
+  doc["error"] = value.error;
+  doc["tlsError"] = value.tlsError;
+  doc["tlsCode"] = value.tlsCode;
+  doc["tlsFlags"] = value.tlsFlags;
+  doc["httpStatus"] = value.httpStatus;
+  doc["fallback"] = value.fallback;
+  return appStorage::save("weather", "diagnostic", doc);
+}
 const City* Store::city() const {
   return customCity.id && customCity.id == settings.cityId ? &customCity : findCity(settings.cityId);
 }
@@ -94,24 +112,36 @@ bool Store::setEnabled(bool enabled) {
 }
 bool Store::selectCoordinates(const char* name, float latitude, float longitude) {
   if (!name || !*name || strlen(name) >= sizeof(customName) || !validCoordinates(latitude, longitude)) return false;
-  customLatitudeE5 = static_cast<int32_t>(std::round(double(latitude) * 100000));
-  customLongitudeE5 = static_cast<int32_t>(std::round(double(longitude) * 100000));
-  const uint32_t id = coordinateLocationIdE5(customLatitudeE5, customLongitudeE5);
+  const int32_t lat = std::lround(double(latitude) * 100000);
+  const int32_t lon = std::lround(double(longitude) * 100000);
+  const uint32_t id = coordinateLocationIdE5(lat, lon);
+  Settings next = settings;
+  next.cityId = id;
+  if (id != settings.cityId) next.enabled = false;
+  if (!writeSettings(next, name, lat, lon)) return false;
+  customLatitudeE5 = lat;
+  customLongitudeE5 = lon;
   snprintf(customName, sizeof(customName), "%s", name);
   customCity = {id, "", customName, latitude, longitude};
-  settings.cityId = id;
-  settings.enabled = false;
-  hasCache = false;
-  snapshot = {};
-  return saveSettings();
+  if (id != settings.cityId) {
+    hasCache = false;
+    snapshot = {};
+  }
+  settings = next;
+  return true;
 }
-void Store::selectCity(uint32_t id) {
-  if (!findCity(id) || id == settings.cityId) return;
-  settings.cityId = id;
-  settings.enabled = false;
+bool Store::selectCity(uint32_t id) {
+  if (!findCity(id)) return false;
+  if (id == settings.cityId) return true;
+  Settings next = settings;
+  next.cityId = id;
+  next.enabled = false;
+  if (!writeSettings(next, nullptr, 0, 0)) return false;
+  settings = next;
+  customCity = {};
   hasCache = false;
   snapshot = {};
-  saveSettings();
+  return true;
 }
 void Store::checkBattery(bool userWake) {
   uint16_t percent = 0;

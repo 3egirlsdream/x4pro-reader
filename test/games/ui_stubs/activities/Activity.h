@@ -3,7 +3,10 @@
 #include <Logging.h>
 class RenderLock {
  public:
-  RenderLock() = default;
+  enum class Mode { Blocking, Try };
+  inline static bool busy = false;
+  explicit RenderLock(Mode = Mode::Blocking) {}
+  bool ownsLock() const { return !busy; }
   ~RenderLock() {}
 };
 class MappedInputManager {

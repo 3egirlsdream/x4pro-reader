@@ -63,13 +63,14 @@ bool save(const char* id, const char* file, const JsonDocument& doc) {
   snprintf(path, sizeof(path), "/.crosspoint/apps/%s", id);
   if (!Storage.ensureDirectoryExists(path)) return false;
   snprintf(path, sizeof(path), "/.crosspoint/apps/%s/%s.json", id, file);
-  snprintf(temp, sizeof(temp), "%s.tmp", path);
+  // Only a successfully renamed document becomes visible to load(). Older .tmp files remain readable.
+  snprintf(temp, sizeof(temp), "%s.part", path);
   snprintf(backup, sizeof(backup), "%s.bak", path);
   {
     HalFile f;
     if (!Storage.openFileForWrite("APP", temp, f)) return false;
     if (serializeJson(doc, f) != measureJson(doc)) return false;
-    f.flush();
+    if (!f.close()) return false;
   }
   // Preserve a recoverable copy across FAT rename interruption.
   if (Storage.exists(path)) {

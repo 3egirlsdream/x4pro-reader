@@ -45,20 +45,50 @@ struct Snapshot {
   uint8_t dayCount = 0;
 };
 
-enum class UpdateResult { Idle, Running, Success, NetworkError, InvalidData, Timeout, Cancelled, ClockError };
+enum class UpdateResult {
+  Idle,
+  Running,
+  Success,
+  NetworkError,
+  InvalidData,
+  Timeout,
+  Cancelled,
+  ClockError,
+  WifiError,
+  DnsError,
+  TlsError,
+  HttpError,
+  RateLimited,
+  StorageError
+};
+
+enum class RequestStage { Connecting, Clock, Primary, Resolve, Alternate, Done };
+struct UpdateDiagnostic {
+  RequestStage stage = RequestStage::Done;
+  UpdateResult result = UpdateResult::Idle;
+  uint32_t elapsedMs = 0;
+  int32_t error = 0;
+  int32_t tlsError = 0;
+  int32_t tlsCode = 0;
+  int32_t tlsFlags = 0;
+  int32_t httpStatus = 0;
+  bool fallback = false;
+};
 
 // Render-task owned; polling and duplicate invalidations do not produce new frames.
 class FrameGate {
   bool painted = false;
   UpdateResult previous = UpdateResult::Idle;
   bool previousPaused = false;
+  uint32_t previousRevision = 0;
 
  public:
-  bool claim(UpdateResult state, bool paused) {
-    if (painted && previous == state && previousPaused == paused) return false;
+  bool claim(UpdateResult state, bool paused, uint32_t revision = 0) {
+    if (painted && previous == state && previousPaused == paused && previousRevision == revision) return false;
     painted = true;
     previous = state;
     previousPaused = paused;
+    previousRevision = revision;
     return true;
   }
 };

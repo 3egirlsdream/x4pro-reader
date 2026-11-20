@@ -1,28 +1,8 @@
 #include "CjkLineBreak.h"
 
-#include <Utf8.h>
-
 #include <algorithm>
 
 namespace txtLayout {
-bool isSimpleCjkLine(const char* text) {
-  bool cjk = false;
-  const auto* cursor = reinterpret_cast<const unsigned char*>(text);
-  while (const uint32_t cp = utf8NextCodepoint(&cursor)) {
-    // Han, Latin and common book punctuation. Contextual scripts, combining
-    // sequences and direction controls keep the shaping-aware fallback.
-    if ((cp >= 0x3400 && cp <= 0x9fff) || (cp >= 0xf900 && cp <= 0xfaff) || (cp >= 0x20000 && cp <= 0x2ebef) ||
-        (cp >= 0x30000 && cp <= 0x323af) || (cp >= 0x3000 && cp <= 0x3029) || (cp >= 0xff01 && cp <= 0xff60)) {
-      cjk = true;
-    } else if ((cp >= 0x20 && cp <= 0x7e) || (cp >= 0xa0 && cp <= 0x24f) || cp == 0x261 ||
-               (cp >= 0x2010 && cp <= 0x2027) || cp == 0x2030 || cp == 0x2032 || cp == 0x2033) {
-      continue;
-    } else {
-      return false;
-    }
-  }
-  return cjk;
-}
 namespace {
 size_t boundary(const std::string& text, size_t offset) {
   while (offset && offset < text.size() && (static_cast<unsigned char>(text[offset]) & 0xc0) == 0x80) --offset;
@@ -41,8 +21,9 @@ int prefixWidth(std::string& text, size_t length, Measure measure, void* context
   return width;
 }
 }  // namespace
-size_t fitCjkLine(std::string& text, int width, Measure measure, void* context) {
+size_t fitLine(std::string& text, int width, Measure measure, void* context) {
   if (text.empty()) return 0;
+  if (text.size() <= 64 && measure(text.c_str(), context) <= width) return text.size();
   size_t low = 0;
   size_t high = nextBoundary(text, 0);
   // First bracket the first screen line, not the entire remaining paragraph.

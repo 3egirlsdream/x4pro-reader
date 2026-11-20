@@ -49,6 +49,10 @@ int main(int argc, char** argv) {
   assert(frames.claim(UpdateResult::Running, false));
   assert(frames.claim(UpdateResult::Timeout, false));
   assert(frames.claim(UpdateResult::Timeout, true));
+  FrameGate fastCompletion;
+  assert(fastCompletion.claim(UpdateResult::Success, false, 1));
+  assert(fastCompletion.claim(UpdateResult::Success, false, 2));
+  for (int i = 0; i < 1000; ++i) assert(!fastCompletion.claim(UpdateResult::Success, false, 2));
   float coordinate = 0;
   assert(parseCoordinate(" 31.23040 ", -90, 90, coordinate));
   assert(!parseCoordinate("31.2,121.5", -90, 90, coordinate));

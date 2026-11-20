@@ -1,6 +1,7 @@
 #pragma once
 #include <HalStorage.h>
 
+#include <atomic>
 #include <map>
 #include <string>
 inline int generatedCovers = 0;
@@ -27,7 +28,7 @@ class Epub {
   int getSpineItemsCount() const { return 3; }
   size_t getBookSize() const { return 1000; }
   float calculateProgress(int spine, float fraction) const { return (spine + fraction) / 3; }
-  bool generateThumbBmpFromSource(int height) {
+  bool generateThumbBmpFromSource(int height, const std::atomic<bool>* = nullptr) {
     ++generatedCovers;
     generatedPath = path;
     fake::add(getThumbBmpPath(height));

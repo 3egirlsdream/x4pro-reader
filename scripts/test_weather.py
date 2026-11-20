@@ -35,3 +35,13 @@ store_command.extend(['-I' + str(root / 'lib/Memory'),
                       '-o', str(out / 'weather-store-tests')])
 subprocess.run(store_command, check=True)
 subprocess.run([str(out / 'weather-store-tests')], check=True, timeout=30)
+
+request_command = command[:command.index(str(root / 'src/weather/WeatherModel.cpp'))]
+request_command.insert(1, '-I' + str(root / 'test/weather/request-stubs'))
+request_command.extend(['-I' + str(root / 'test/weather/stubs'), '-I' + str(root / 'lib/Performance'),
+                        str(root / 'src/weather/WeatherRequest.cpp'), str(root / 'src/weather/WeatherModel.cpp'),
+                        str(root / 'src/weather/WeatherJson.cpp'), str(root / 'test/weather/WeatherRequestTest.cpp'),
+                        '-o', str(out / 'weather-request-tests')])
+subprocess.run(request_command, check=True)
+subprocess.run([str(out / 'weather-request-tests'), str(root / 'test/weather/fixtures/open-meteo-beijing.json')],
+               check=True, timeout=30)

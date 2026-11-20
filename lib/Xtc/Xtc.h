@@ -6,7 +6,7 @@
  */
 
 #pragma once
-
+#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
@@ -66,7 +66,7 @@ class Xtc {
   // Thumbnail support (for Continue Reading card)
   std::string getThumbBmpPath() const;
   std::string getThumbBmpPath(int height) const;
-  bool generateThumbBmp(int height) const;
+  bool generateThumbBmp(int height, const std::atomic<bool>* cancel = nullptr) const;
 
   // Page access
   uint32_t getPageCount() const;

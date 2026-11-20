@@ -4,8 +4,19 @@
 #include "Game2048.h"
 #include "Gomoku.h"
 #include "activities/Activity.h"
+#include "activities/InputQueue.h"
 #include "components/themes/BaseTheme.h"
 namespace games {
+struct GameInput {
+  using Button = MappedInputManager::Button;
+  using SwipeDir = MappedInputManager::SwipeDir;
+  int x = 0, y = 0;
+  uint8_t buttons = 0;
+  bool tap = false, hold = false, longUp = false, longDown = false;
+  SwipeDir swipe = SwipeDir::None;
+  bool released(Button b) const { return buttons & (1u << static_cast<unsigned>(b)); }
+  bool active() const { return buttons || tap || hold || longUp || longDown || swipe != SwipeDir::None; }
+};
 class GameActivity : public Activity {
  public:
   GameActivity(const char* id, StrId title, GfxRenderer& r, MappedInputManager& input)
@@ -32,10 +43,11 @@ class GameActivity : public Activity {
   virtual void load() = 0;
   virtual void save() = 0;
   virtual void drawGame() = 0;
-  virtual void inputGame() = 0;
+  virtual void inputGame(const GameInput& event) = 0;
   virtual void newGame(bool alternate) = 0;
   virtual void stopWork() {}
   virtual void resumeWork() {}
+  virtual bool usesFlagInput() const { return false; }
   virtual bool gomoku() const { return false; }
   virtual int boardDivisions() const { return gomoku() ? 14 : 4; }
   virtual int menuCount() const { return gomoku() ? 3 : 2; }
@@ -47,6 +59,7 @@ class GameActivity : public Activity {
   void center(int y, const char* text, int font) const;
 
  private:
+  InputQueue<GameInput> events;
   GfxRenderer::Orientation previous = GfxRenderer::Portrait;
 };
 class Game2048Activity final : public GameActivity {
@@ -61,7 +74,7 @@ class Game2048Activity final : public GameActivity {
   void load() override;
   void save() override;
   void drawGame() override;
-  void inputGame() override;
+  void inputGame(const GameInput& event) override;
   void newGame(bool alternate) override;
 };
 class GomokuActivity final : public GameActivity {
@@ -85,7 +98,7 @@ class GomokuActivity final : public GameActivity {
   void load() override;
   void save() override;
   void drawGame() override;
-  void inputGame() override;
+  void inputGame(const GameInput& event) override;
   void newGame(bool alternate) override;
   void stopWork() override { ai.cancel(); }
   void resumeWork() override;

@@ -68,25 +68,34 @@ void GameActivity::loop() {
     openApps(renderer, mappedInput);
     return;
   }
-  int x = 0, y = 0;
-  const bool tapped = mappedInput.wasScreenTapped(x, y);
-  if (tapped && y >= footer && y < footer + 60 && x >= safe.x && x < safe.x + safe.width) {
-    if (x < safe.x + safe.width / 3) {
-      openApps(renderer, mappedInput);
-      return;
+  GameInput input;
+  for (const auto button : {Button::Up, Button::Down, Button::Left, Button::Right, Button::Confirm})
+    if (mappedInput.wasReleased(button)) input.buttons |= 1u << static_cast<unsigned>(button);
+  input.longDown = mappedInput.wasLongPressed(Button::Down, 700);
+  input.tap = mappedInput.wasScreenTapped(input.x, input.y);
+  if (!menu && usesFlagInput()) {
+    input.longUp = mappedInput.wasLongPressed(Button::Up, 700);
+    int x = 0, y = 0;
+    if (mappedInput.wasScreenLongPress(x, y)) {
+      input.hold = true;
+      input.x = x;
+      input.y = y;
     }
-    RenderLock lock;
-    menu = !menu;
-    menuIndex = 0;
-    if (menu)
-      stopWork();
-    else
-      resumeWork();
-    update();
+  }
+  input.swipe = mappedInput.wasSwipe();
+  if (input.active()) events.push(input);
+  if (events.empty() && !skipLoopDelay()) return;
+  RenderLock lock(RenderLock::Mode::Try);
+  if (!lock.ownsLock()) return;
+  const GameInput event = events.empty() ? GameInput{} : events.pop();
+  const int x = event.x, y = event.y;
+  const bool tapped = event.tap;
+  const bool footerTap = tapped && y >= footer && y < footer + 60 && x >= safe.x && x < safe.x + safe.width;
+  if (footerTap && x < safe.x + safe.width / 3) {
+    openApps(renderer, mappedInput);
     return;
   }
-  RenderLock lock;
-  if (mappedInput.wasLongPressed(Button::Down, 700)) {
+  if (footerTap || event.longDown) {
     menu = !menu;
     menuIndex = 0;
     if (menu)
@@ -98,15 +107,15 @@ void GameActivity::loop() {
   }
   if (menu) {
     const int count = menuCount();
-    if (mappedInput.wasReleased(Button::Up)) {
+    if (event.released(Button::Up)) {
       menuIndex = (menuIndex + count - 1) % count;
       update();
     }
-    if (mappedInput.wasReleased(Button::Down)) {
+    if (event.released(Button::Down)) {
       menuIndex = (menuIndex + 1) % count;
       update();
     }
-    bool activate = mappedInput.wasReleased(Button::Confirm);
+    bool activate = event.released(Button::Confirm);
     if (tapped && y >= boardY && y < boardY + count * 64 && x >= safe.x && x < safe.x + safe.width) {
       menuIndex = (y - boardY) / 64;
       activate = true;
@@ -119,7 +128,7 @@ void GameActivity::loop() {
     }
     return;
   }
-  inputGame();
+  inputGame(event);
 }
 const char* GameActivity::menuLabel(int index) const {
   if (!index) return tr(STR_GAME_RESUME);
@@ -180,25 +189,25 @@ void Game2048Activity::newGame(bool) {
   changed = true;
   ++boardUpdates;
 }
-void Game2048Activity::inputGame() {
-  auto swipe = mappedInput.wasSwipe();
+void Game2048Activity::inputGame(const GameInput& event) {
+  auto swipe = event.swipe;
   Direction direction = Direction::Left;
   bool move = true;
-  if (swipe == MappedInputManager::SwipeDir::Left || mappedInput.wasReleased(Button::Left))
+  if (swipe == MappedInputManager::SwipeDir::Left || event.released(Button::Left))
     direction = Direction::Left;
-  else if (swipe == MappedInputManager::SwipeDir::Right || mappedInput.wasReleased(Button::Right))
+  else if (swipe == MappedInputManager::SwipeDir::Right || event.released(Button::Right))
     direction = Direction::Right;
   else if (swipe == MappedInputManager::SwipeDir::Up)
     direction = Direction::Up;
   else if (swipe == MappedInputManager::SwipeDir::Down)
     direction = Direction::Down;
-  else if (mappedInput.wasReleased(Button::Up))
+  else if (event.released(Button::Up))
     direction = horizontal ? Direction::Left : Direction::Up;
-  else if (mappedInput.wasReleased(Button::Down))
+  else if (event.released(Button::Down))
     direction = horizontal ? Direction::Right : Direction::Down;
   else
     move = false;
-  if (mappedInput.wasReleased(Button::Confirm)) {
+  if (event.released(Button::Confirm)) {
     horizontal = !horizontal;
     update();
   }
@@ -256,7 +265,7 @@ void GomokuActivity::place() {
   update(true);
   resumeWork();
 }
-void GomokuActivity::inputGame() {
+void GomokuActivity::inputGame(const GameInput& event) {
   if (ai.running()) {
     if (!computeUs) searchStartedMs = millis();
     const uint32_t start = micros();
@@ -277,8 +286,8 @@ void GomokuActivity::inputGame() {
     }
     return;
   }
-  int x = 0, y = 0;
-  if (!game.result && game.turn == game.human && mappedInput.wasScreenTapped(x, y)) {
+  const int x = event.x, y = event.y;
+  if (!game.result && game.turn == game.human && event.tap) {
     const int left = boardX - unit / 2, upper = boardY - unit / 2;
     if (x >= left && y >= upper && x < boardX + 14 * unit + unit / 2 && y < boardY + 14 * unit + unit / 2) {
       const int col = (x - left) / unit, row = (y - upper) / unit;
@@ -292,15 +301,15 @@ void GomokuActivity::inputGame() {
     }
   }
   int next = cursor;
-  if (mappedInput.wasReleased(Button::Up)) next = (cursor + 224) % 225;
-  if (mappedInput.wasReleased(Button::Down)) next = (cursor + 1) % 225;
-  if (mappedInput.wasReleased(Button::Left)) next = cursor % 15 ? cursor - 1 : cursor;
-  if (mappedInput.wasReleased(Button::Right)) next = cursor % 15 < 14 ? cursor + 1 : cursor;
+  if (event.released(Button::Up)) next = (cursor + 224) % 225;
+  if (event.released(Button::Down)) next = (cursor + 1) % 225;
+  if (event.released(Button::Left)) next = cursor % 15 ? cursor - 1 : cursor;
+  if (event.released(Button::Right)) next = cursor % 15 < 14 ? cursor + 1 : cursor;
   if (next != cursor) {
     cursor = next;
     update();
   }
-  if (mappedInput.wasReleased(Button::Confirm)) place();
+  if (event.released(Button::Confirm)) place();
 }
 void GomokuActivity::drawGame() {
   const char* status = game.result == 3 ? tr(STR_GAME_DRAW)

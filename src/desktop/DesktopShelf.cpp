@@ -15,6 +15,16 @@
 
 namespace desktop {
 namespace {
+// A decoder may finish after the originating page has closed. It owns its paths
+// and writes into a separate cache so a reader can open the same book immediately.
+struct CoverJob {
+  std::atomic<bool> busy{false}, cancelled{false};
+  std::string path, result;
+  int height = 0;
+};
+CoverJob cover;
+constexpr char COVER_ROOT[] = "/.crosspoint/desktop-covers";
+
 uint32_t orderChecksum(const Rank* ranks, size_t count) {
   const auto* bytes = reinterpret_cast<const uint8_t*>(ranks);
   uint32_t value = 2166136261u;
@@ -27,7 +37,8 @@ void Shelf::stop() {
   performance::Scope timing(performance::Stage::ShelfStop);
   cancel = true;
   // The worker owns no Activity state after building becomes false.
-  while (building.load() || coverBusy.load()) delay(1);
+  cover.cancelled = true;
+  while (building.load()) delay(1);
   index.close();
 }
 void Shelf::begin() {
@@ -70,39 +81,48 @@ void Shelf::buildTask(void* context) {
   self->building = false;
   vTaskDelete(nullptr);
 }
-void Shelf::coverTask(void* context) {
-  auto* self = static_cast<Shelf*>(context);
+void Shelf::quiesceCovers() {
+  cover.cancelled = true;
+  while (cover.busy.load()) delay(1);
+}
+void Shelf::coverTask(void*) {
   const auto started = millis();
-  const auto& path = self->coverJobPath;
-  std::string result;
-  if (!self->cancel.load() && FsHelpers::hasEpubExtension(path)) {
-    auto epub = makeUniqueNoThrow<Epub>(path, "/.crosspoint");
-    if (epub && epub->generateThumbBmpFromSource(self->jobHeight)) result = epub->getThumbBmpPath(self->jobHeight);
-  } else if (!self->cancel.load() && FsHelpers::hasXtcExtension(path)) {
-    auto xtc = makeUniqueNoThrow<Xtc>(path, "/.crosspoint");
-    if (xtc && xtc->load() && xtc->generateThumbBmp(self->jobHeight)) result = xtc->getThumbBmpPath(self->jobHeight);
-  } else if (!self->cancel.load()) {
-    auto txt = makeUniqueNoThrow<Txt>(path, "/.crosspoint");
-    if (txt) {
-      txt->setupCacheDir();
-      if (txt->generateCoverBmp()) result = txt->getCoverBmpPath();
+  const auto& path = cover.path;
+  if (!cover.cancelled && (Storage.exists(COVER_ROOT) || Storage.mkdir(COVER_ROOT))) {
+    const bool text = FsHelpers::hasTxtExtension(path) || FsHelpers::hasMarkdownExtension(path);
+    const auto existing =
+        cachePathFor(path) + (text ? "/cover.bmp" : "/thumb_" + std::to_string(cover.height) + ".bmp");
+    if (Storage.exists(existing.c_str())) {
+      cover.result = existing;
+    } else if (FsHelpers::hasEpubExtension(path)) {
+      auto epub = makeUniqueNoThrow<Epub>(path, COVER_ROOT);
+      if (epub && epub->generateThumbBmpFromSource(cover.height, &cover.cancelled))
+        cover.result = epub->getThumbBmpPath(cover.height);
+    } else if (FsHelpers::hasXtcExtension(path)) {
+      auto xtc = makeUniqueNoThrow<Xtc>(path, COVER_ROOT);
+      if (xtc && xtc->load() && !cover.cancelled && xtc->generateThumbBmp(cover.height, &cover.cancelled))
+        cover.result = xtc->getThumbBmpPath(cover.height);
+    } else {
+      auto txt = makeUniqueNoThrow<Txt>(path, COVER_ROOT);
+      if (txt && txt->generateCoverBmp()) cover.result = txt->getCoverBmpPath();
     }
   }
-  LOG_INF("DESKTOP", "visible_cover slot=%d height=%d software_ms=%lu", self->coverSlot, self->jobHeight,
-          static_cast<unsigned long>(millis() - started));
   performance::record(performance::Stage::ShelfCover, millis() - started);
-  self->coverResult = std::move(result);
-  self->coverDone = true;
-  self->coverBusy = false;
+  cover.busy = false;
   vTaskDelete(nullptr);
 }
 bool Shelf::step(int coverHeight) {
-  if (coverDone.load() && !coverBusy.load()) {
-    coverDone = false;
-    if (!coverResult.empty() && books[coverSlot].path == coverJobPath) {
-      books[coverSlot].cover = std::move(coverResult);
-      return true;
+  if (!cover.busy.load() && !cover.result.empty()) {
+    bool applied = false;
+    for (int i = 0; i < shown; ++i) {
+      if (books[i].path == cover.path && cover.height == coverHeight) {
+        books[i].cover = std::move(cover.result);
+        applied = true;
+        break;
+      }
     }
+    cover.result.clear();
+    if (applied) return true;
   }
   if (buildDone.exchange(false)) {
     error = !buildOk.load();
@@ -122,17 +142,16 @@ bool Shelf::step(int coverHeight) {
     return true;
   }
   if (!scanning) {
-    if (!building.load() && !coverBusy.load() && coverHeight > 0 && !error) {
+    if (!building.load() && !cover.busy.load() && coverHeight > 0 && !error) {
       for (int i = 0; i < shown; ++i) {
         if (coverAttempted[i]) continue;
         coverAttempted[i] = true;
         if (!books[i].cover.empty() && books[i].cover.find("[HEIGHT]") == std::string::npos) continue;
-        coverSlot = i;
-        jobHeight = coverHeight;
-        coverJobPath = books[i].path;
-        cancel = false;
-        coverBusy = true;
-        if (xTaskCreate(&Shelf::coverTask, "DesktopCover", 8192, this, 1, nullptr) != pdPASS) coverBusy = false;
+        cover.height = coverHeight;
+        cover.path = books[i].path;
+        cover.cancelled = false;
+        cover.busy = true;
+        if (xTaskCreate(&Shelf::coverTask, "DesktopCover", 8192, nullptr, 1, nullptr) != pdPASS) cover.busy = false;
         break;
       }
     }
@@ -175,8 +194,7 @@ bool Shelf::step(int coverHeight) {
 }
 bool Shelf::loadPage(int value) {
   cancel = true;
-  while (coverBusy.load()) delay(1);
-  coverDone = false;
+  cover.cancelled = true;
   coverAttempted.fill(false);
   page = std::clamp(value, 0, pageCount(total) - 1);
   shown = 0;

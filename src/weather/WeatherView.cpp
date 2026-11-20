@@ -43,6 +43,36 @@ const char* condition(int code) {
       return tr(STR_WX_STORM);
   }
 }
+const char* updateStatus(UpdateResult result) {
+  switch (result) {
+    case UpdateResult::Running:
+      return tr(STR_WX_UPDATING);
+    case UpdateResult::Success:
+      return tr(STR_WX_COMPLETE);
+    case UpdateResult::WifiError:
+      return tr(STR_WX_WIFI_FAILED);
+    case UpdateResult::DnsError:
+      return tr(STR_WX_DNS_FAILED);
+    case UpdateResult::TlsError:
+      return tr(STR_WX_TLS_FAILED);
+    case UpdateResult::HttpError:
+      return tr(STR_WX_SERVICE_FAILED);
+    case UpdateResult::RateLimited:
+      return tr(STR_WX_RATE_LIMITED);
+    case UpdateResult::ClockError:
+      return tr(STR_WX_CLOCK_FAILED);
+    case UpdateResult::Timeout:
+      return tr(STR_WX_TIMED_OUT);
+    case UpdateResult::InvalidData:
+      return tr(STR_WX_DATA_FAILED);
+    case UpdateResult::StorageError:
+      return tr(STR_WX_SAVE_FAILED);
+    case UpdateResult::Idle:
+      return tr(STR_WX_MODEL_DATA);
+    default:
+      return tr(STR_WX_FAILED);
+  }
+}
 void stamp(char* output, size_t size, int64_t epoch, const char* format) {
   const time_t beijing = epoch + 8 * 3600;
   struct tm local{};
@@ -96,11 +126,9 @@ void drawWeatherView(GfxRenderer& renderer, const View& view) {
     snprintf(text, sizeof(text), tr(STR_WX_UPDATED_VALUE), date);
     renderer.drawText(UI_10_FONT_ID, m, footer, text);
   }
-  const char* status = view.batteryPaused                     ? tr(STR_WX_BATTERY_PAUSED)
-                       : view.result == UpdateResult::Running ? tr(STR_WX_UPDATING)
-                       : view.result != UpdateResult::Idle && view.result != UpdateResult::Success ? tr(STR_WX_FAILED)
-                       : view.result == UpdateResult::Success                                      ? tr(STR_WX_COMPLETE)
-                                                              : tr(STR_WX_MODEL_DATA);
+  const bool showBatteryPause = view.batteryPaused && (view.unattended || view.result == UpdateResult::Idle ||
+                                                       view.result == UpdateResult::Success);
+  const char* status = showBatteryPause ? tr(STR_WX_BATTERY_PAUSED) : updateStatus(view.result);
   renderer.drawText(UI_10_FONT_ID, w / 2, footer, status);
   renderer.drawText(SMALL_FONT_ID, m, footer + 24, tr(STR_WX_SOURCE));
   if (!view.unattended) {

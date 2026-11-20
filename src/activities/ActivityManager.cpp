@@ -17,6 +17,7 @@
 #include "boot_sleep/SleepActivity.h"
 #include "browser/OpdsBookBrowserActivity.h"
 #include "components/HeaderBackTapTarget.h"
+#include "desktop/DesktopShelf.h"
 #include "home/CrashActivity.h"
 #include "home/FileBrowserActivity.h"
 #include "home/HomeActivity.h"
@@ -187,6 +188,7 @@ void ActivityManager::loop() {
       }
 
     } else if (pendingActivity) {
+      if (!pendingActivity->isReaderActivity() && !pendingActivity->isHomeActivity()) desktop::Shelf::quiesceCovers();
       // Current activity has requested a new activity to be launched
       const auto waitStarted = millis();
       RenderLock lock;

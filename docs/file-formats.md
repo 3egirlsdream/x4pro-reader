@@ -507,3 +507,18 @@ make a real book disappear.
 
 `selfSize` is the expected file size. Comparing it against the real one is a free
 truncation guard: a build cut short by a power failure cannot pass.
+
+
+## TXT reading position
+
+Under `/.crosspoint/txt_<hash>/`, the v2 `progress.bin` record has three little-endian
+32-bit fields: zero-based page number, starting UTF-8 byte offset, and source file
+length. Its 12-byte length distinguishes it from the 4-byte legacy page record.
+On reflow, the reader locates the page containing the byte offset. For a legacy
+record it uses the previous index if available, otherwise it rebuilds to the
+saved page. A new position is committed only after the restored page renders.
+
+Reader position files rotate through a closed staging file (`.part`), a ready
+file (`.tmp`) and the previous committed record (`.bak`). Recovery checks the
+canonical file first, followed by ready and backup, with format-specific length
+validation. A partial staging file is ignored.

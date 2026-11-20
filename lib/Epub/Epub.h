@@ -1,7 +1,7 @@
 #pragma once
-
 #include <Print.h>
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -33,7 +33,8 @@ class Epub {
   bool findContentOpfFile(std::string* contentOpfFile, ZipFile* sharedZip = nullptr) const;
   bool parseContentOpf(BookMetadataCache::BookMetadata& bookMetadata, bool writeSpineEntries = true,
                        bool metadataOnly = false, ZipFile* sharedZip = nullptr);
-  bool generateThumbBmpForCover(int height, const std::string& coverImageHref) const;
+  bool generateThumbBmpForCover(int height, const std::string& coverImageHref,
+                                const std::atomic<bool>* cancel = nullptr) const;
   bool parseTocNcxFile() const;
   bool parseTocNavFile() const;
   void discoverCssFilesFromZip();
@@ -61,7 +62,7 @@ class Epub {
   std::string getThumbBmpPath(int height) const;
   bool generateThumbBmp(int height) const;
   // Locate the cover without building spine, TOC, or reading caches.
-  bool generateThumbBmpFromSource(int height);
+  bool generateThumbBmpFromSource(int height, const std::atomic<bool>* cancel = nullptr);
   uint8_t* readItemContentsToBytes(const std::string& itemHref, size_t* size = nullptr,
                                    bool trailingNullByte = false) const;
   bool readItemContentsToStream(const std::string& itemHref, Print& out, size_t chunkSize,

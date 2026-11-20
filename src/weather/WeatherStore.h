@@ -11,9 +11,10 @@ class Store {
   void load();
   bool saveSettings() const;
   bool acceptSnapshot(const Snapshot& value);
+  bool saveDiagnostic(const UpdateDiagnostic& value) const;
   bool canEnable() const;
   const City* city() const;
-  void selectCity(uint32_t id);
+  bool selectCity(uint32_t id);
   bool selectCoordinates(const char* name, float latitude, float longitude);
   bool setEnabled(bool enabled);
   char customName[64]{};

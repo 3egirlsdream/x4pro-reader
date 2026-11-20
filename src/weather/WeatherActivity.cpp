@@ -75,6 +75,7 @@ void WeatherActivity::refresh() {
 void WeatherActivity::leave(bool home) {
   request.reset();
   if (unattended) {
+    loadInteractiveStores();
     APP_STATE.weatherSleepArmed = false;
     APP_STATE.saveToFile();
     if (!home && APP_STATE.lastSleepFromReader && !APP_STATE.openEpubPath.empty())
@@ -111,14 +112,18 @@ void WeatherActivity::loop() {
   if (request) {
     const auto next = request->poll();
     if (next != UpdateResult::Running) {
+      auto diagnostic = request->diagnostic();
       {
         RenderLock lock;
         result = next;
         if (result == UpdateResult::Success && !Store::instance().acceptSnapshot(request->value()))
-          result = UpdateResult::InvalidData;
+          result = UpdateResult::StorageError;
+        diagnostic.result = result.load();
+        ++frameRevision;
         request.reset();
         completed = true;
       }
+      if (!Store::instance().saveDiagnostic(diagnostic)) LOG_ERR("WX", "Cannot save update diagnostic");
       WiFi.disconnect(true);
       WiFi.mode(WIFI_OFF);
       if (!unattended) requestUpdate();
@@ -139,7 +144,7 @@ void WeatherActivity::loop() {
 void WeatherActivity::render(RenderLock&&) {
   const auto& store = Store::instance();
   const auto status = result.load();
-  if (!frameGate.claim(status, store.settings.batteryPaused)) return;
+  if (!frameGate.claim(status, store.settings.batteryPaused, frameRevision)) return;
   display.setInverted(false);
   const View view{store.city(), &store.snapshot, store.hasCache, store.settings.batteryPaused, unattended, result};
   drawWeatherView(renderer, view);

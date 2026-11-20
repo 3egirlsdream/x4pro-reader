@@ -102,12 +102,12 @@ void HomeActivity::processCommand(int command) {
 void HomeActivity::loop() {
   if (!ui) return;
   // Route every release, even during a paint. Defer its command until the render lock is available.
-  const bool hadPending = pendingCommand >= 0;
+  int pendingCommand = -1;
   const int action = ui->selectedAction(mappedInput);
   if (action >= 0)
     pendingCommand = action;
   else if (mappedInput.wasReleased(MappedInputManager::Button::Confirm))
-    pendingCommand = selection;
+    pendingCommand = 45;
   else if (mappedInput.wasReleased(MappedInputManager::Button::Back))
     pendingCommand = 40;
   else if (mappedInput.wasReleased(MappedInputManager::Button::Up))
@@ -123,14 +123,16 @@ void HomeActivity::loop() {
     pendingCommand = desktop::PAGE_NEXT;
   if (swipe == MappedInputManager::SwipeDir::Down || swipe == MappedInputManager::SwipeDir::Right)
     pendingCommand = desktop::PAGE_PREVIOUS;
-  if (!hadPending && pendingCommand >= 0) pendingSince = millis();
+  if (pendingCommand >= 0) {
+    if (commands.empty()) pendingSince = millis();
+    commands.push(pendingCommand);
+  }
   RenderLock lock(RenderLock::Mode::Try);
   if (!lock.ownsLock()) return;
-  if (pendingCommand >= 0) {
+  if (!commands.empty()) {
     LOG_INF("DESKTOP", "input_queue_wait_ms=%lu", static_cast<unsigned long>(millis() - pendingSince));
-    const int command = pendingCommand;
-    pendingCommand = -1;
-    processCommand(command);
+    const int command = commands.pop();
+    processCommand(command == 45 ? selection : command);
     return;
   }
   int x, y;

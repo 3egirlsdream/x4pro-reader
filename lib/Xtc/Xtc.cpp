@@ -279,7 +279,7 @@ bool Xtc::generateCoverBmp() const {
 std::string Xtc::getThumbBmpPath() const { return cachePath + "/thumb_[HEIGHT].bmp"; }
 std::string Xtc::getThumbBmpPath(int height) const { return cachePath + "/thumb_" + std::to_string(height) + ".bmp"; }
 
-bool Xtc::generateThumbBmp(int height) const {
+bool Xtc::generateThumbBmp(int height, const std::atomic<bool>* cancel) const {
   // Already generated
   if (Storage.exists(getThumbBmpPath(height).c_str())) {
     return true;
@@ -391,6 +391,11 @@ bool Xtc::generateThumbBmp(int height) const {
   uint8_t rowsSinceYield = 0;
 
   for (uint16_t dstY = 0; dstY < thumbHeight; dstY++) {
+    if (cancel && *cancel) {
+      thumbBmp.close();
+      Storage.remove(getThumbBmpPath(height).c_str());
+      return false;
+    }
     memset(rowBuffer, 0xFF, rowSize);  // Start with all white (bit 1)
 
     // Calculate source Y range with bounds checking

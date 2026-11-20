@@ -168,26 +168,15 @@ constexpr size_t JPEG_DECODER_SIZE = 20 * 1024;
 constexpr size_t MIN_FREE_HEAP = JPEG_DECODER_SIZE + 32 * 1024;
 constexpr uint32_t FP_ONE = 1UL << 16;
 
-// Static file pointer for JPEGDEC open callback.
-// Safe in single-threaded embedded context; never accessed concurrently.
-static HalFile* s_jpegFile = nullptr;
-static uint8_t s_jpegIoSinceYield = 0;
-
+struct JpegInput {
+  HalFile& file;
+  uint8_t ioSinceYield = 0;
+};
 static void yieldToIdle() { vTaskDelay(1); }
-
-static void yieldDuringJpegIo() {
-  if (++s_jpegIoSinceYield < 4) return;
-  s_jpegIoSinceYield = 0;
+static void yieldDuringJpegIo(JpegInput& input) {
+  if (++input.ioSinceYield < 4) return;
+  input.ioSinceYield = 0;
   yieldToIdle();
-}
-
-void* bmpJpegOpen(const char* /*filename*/, int32_t* size) {
-  if (!s_jpegFile || !*s_jpegFile) return nullptr;
-  s_jpegIoSinceYield = 0;
-  s_jpegFile->seek(0);
-  *size = static_cast<int32_t>(s_jpegFile->size());
-  yieldDuringJpegIo();
-  return s_jpegFile;
 }
 
 void bmpJpegClose(void* /*handle*/) {
@@ -195,25 +184,26 @@ void bmpJpegClose(void* /*handle*/) {
 }
 
 int32_t bmpJpegRead(JPEGFILE* pFile, uint8_t* pBuf, int32_t len) {
-  auto* f = reinterpret_cast<HalFile*>(pFile->fHandle);
-  if (!f) return 0;
-  int32_t n = f->read(pBuf, len);
+  auto* input = static_cast<JpegInput*>(pFile->fHandle);
+  if (!input) return 0;
+  int32_t n = input->file.read(pBuf, len);
   if (n < 0) n = 0;
   pFile->iPos += n;
-  yieldDuringJpegIo();
+  yieldDuringJpegIo(*input);
   return n;
 }
 
 int32_t bmpJpegSeek(JPEGFILE* pFile, int32_t pos) {
-  auto* f = reinterpret_cast<HalFile*>(pFile->fHandle);
-  if (!f || !f->seek(pos)) return -1;
+  auto* input = static_cast<JpegInput*>(pFile->fHandle);
+  if (!input || !input->file.seek(pos)) return -1;
   pFile->iPos = pos;
-  yieldDuringJpegIo();
+  yieldDuringJpegIo(*input);
   return pos;
 }
 
 // Context passed to the JPEGDEC draw callback via setUserPointer()
 struct BmpConvertCtx {
+  const std::atomic<bool>* cancel;
   Print* bmpOut;
   int srcWidth;
   int srcHeight;
@@ -436,6 +426,10 @@ static void flushScaledRow(BmpConvertCtx* ctx) {
 int bmpDrawCallback(JPEGDRAW* pDraw) {
   auto* ctx = reinterpret_cast<BmpConvertCtx*>(pDraw->pUser);
   if (!ctx || ctx->error) return 0;
+  if (ctx->cancel && *ctx->cancel) {
+    ctx->error = true;
+    return 0;
+  }
   yieldDuringDecodeBlock(ctx);
 
   const uint8_t* pixels = reinterpret_cast<uint8_t*>(pDraw->pPixels);
@@ -512,8 +506,8 @@ int bmpDrawCallback(JPEGDRAW* pDraw) {
 
 // Internal implementation with configurable target size and bit depth
 bool JpegToBmpConverter::jpegFileToBmpStreamInternal(HalFile& jpegFile, Print& bmpOut, int targetWidth,
-                                                     int targetHeight, bool oneBit, bool crop,
-                                                     bool originalThresholds) {
+                                                     int targetHeight, bool oneBit, bool crop, bool originalThresholds,
+                                                     const std::atomic<bool>* cancel) {
   LOG_DBG("JPG", "Converting JPEG to %s BMP (target: %dx%d)", oneBit ? "1-bit" : "2-bit", targetWidth, targetHeight);
 
   if (ESP.getFreeHeap() < MIN_FREE_HEAP) {
@@ -521,7 +515,8 @@ bool JpegToBmpConverter::jpegFileToBmpStreamInternal(HalFile& jpegFile, Print& b
     return false;
   }
 
-  s_jpegFile = &jpegFile;
+  JpegInput input{jpegFile};
+  if (!jpegFile.seek(0)) return false;
 
   const auto jpeg = makeUniqueNoThrow<JPEGDEC>();
   if (!jpeg) {
@@ -529,7 +524,8 @@ bool JpegToBmpConverter::jpegFileToBmpStreamInternal(HalFile& jpegFile, Print& b
     return false;
   }
 
-  int rc = jpeg->open("", bmpJpegOpen, bmpJpegClose, bmpJpegRead, bmpJpegSeek, bmpDrawCallback);
+  int rc =
+      jpeg->open(&input, static_cast<int>(jpegFile.size()), bmpJpegClose, bmpJpegRead, bmpJpegSeek, bmpDrawCallback);
   if (rc != 1) {
     LOG_ERR("JPG", "JPEG open failed (err=%d)", jpeg->getLastError());
     return false;
@@ -617,6 +613,7 @@ bool JpegToBmpConverter::jpegFileToBmpStreamInternal(HalFile& jpegFile, Print& b
   }
 
   BmpConvertCtx ctx = {};
+  ctx.cancel = cancel;
   ctx.bmpOut = &bmpOut;
   ctx.srcWidth = scaleSrcWidth;
   ctx.srcHeight = scaleSrcHeight;
@@ -729,6 +726,6 @@ bool JpegToBmpConverter::jpegFileToBmpStreamWithSize(HalFile& jpegFile, Print& b
 
 // Convert to 1-bit BMP (black and white only, no grays) for fast home screen rendering
 bool JpegToBmpConverter::jpegFileTo1BitBmpStreamWithSize(HalFile& jpegFile, Print& bmpOut, int targetMaxWidth,
-                                                         int targetMaxHeight) {
-  return jpegFileToBmpStreamInternal(jpegFile, bmpOut, targetMaxWidth, targetMaxHeight, true, true);
+                                                         int targetMaxHeight, const std::atomic<bool>* cancel) {
+  return jpegFileToBmpStreamInternal(jpegFile, bmpOut, targetMaxWidth, targetMaxHeight, true, true, false, cancel);
 }

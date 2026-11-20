@@ -310,6 +310,15 @@ void enterDeepSleep(bool fromTimeout = false, bool allowWeather = true) {
   powerManager.startDeepSleep(gpio);
 }
 
+void weather::loadInteractiveStores() {
+  static bool loaded = false;
+  if (loaded) return;
+  RECENT_BOOKS.loadFromFile();
+  KOREADER_STORE.loadFromFile();
+  OPDS_STORE.loadFromFile();
+  loaded = true;
+}
+
 void weather::finishSleep(uint32_t seconds) {
   HalPowerManager::Lock powerLock;
   APP_STATE.weatherSleepArmed = seconds > 0;
@@ -492,10 +501,8 @@ void setup() {
   // Push the saved timezone's POSIX rule into the clock (migrating the legacy
   // UTC-offset setting on first boot after the update).
   timezones::applyToClock();
-  RECENT_BOOKS.loadFromFile();
+  if (!weatherTimerWake) weather::loadInteractiveStores();
   I18N.setLanguage(static_cast<Language>(SETTINGS.language));
-  KOREADER_STORE.loadFromFile();
-  OPDS_STORE.loadFromFile();
   UITheme::getInstance().reload();
   ButtonNavigator::setMappedInputManager(mappedInputManager);
 

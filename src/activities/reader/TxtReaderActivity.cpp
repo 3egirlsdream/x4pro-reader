@@ -95,6 +95,7 @@ void TxtReaderActivity::observePage(size_t page, size_t nextOffset) {
 }
 float TxtReaderActivity::byteProgress() const {
   if (!txt || !txt->getFileSize() || currentPage < 0) return 0;
+  if (restoreOffset != UINT32_MAX) return static_cast<float>(restoreOffset) * 100.0f / txt->getFileSize();
   if (currentPage >= static_cast<int>(pageOffsets.size())) return 100;
   return static_cast<float>(pageOffsets[currentPage]) * 100.0f / txt->getFileSize();
 }
@@ -155,7 +156,6 @@ bool TxtReaderActivity::loadPageAtOffset(const GfxRenderer& renderer, size_t off
 
     std::string line(reinterpret_cast<char*>(buffer + pos), displayLen);
     size_t lineBytePos = 0;
-    const bool simpleCjk = txtLayout::isSimpleCjkLine(line.c_str());
     struct MeasureContext {
       const GfxRenderer& renderer;
       int fontId;
@@ -167,29 +167,13 @@ bool TxtReaderActivity::loadPageAtOffset(const GfxRenderer& renderer, size_t off
         break;
       }
 
-      size_t breakPos = line.length();
-      if (simpleCjk) {
-        breakPos = txtLayout::fitCjkLine(
-            line, viewportWidth,
-            [](const char* text, void* context) {
-              const auto& m = *static_cast<MeasureContext*>(context);
-              return m.renderer.getTextAdvanceX(m.fontId, text, EpdFontFamily::REGULAR);
-            },
-            &measureContext);
-      } else if (renderer.getTextAdvanceX(cachedFontId, line.c_str(), EpdFontFamily::REGULAR) > viewportWidth) {
-        // Preserve contextual-script and non-CJK behavior.
-        while (breakPos > 0 && renderer.getTextAdvanceX(cachedFontId, line.substr(0, breakPos).c_str(),
-                                                        EpdFontFamily::REGULAR) > viewportWidth) {
-          const size_t spacePos = line.rfind(' ', breakPos - 1);
-          if (spacePos != std::string::npos && spacePos > 0) {
-            breakPos = spacePos;
-          } else {
-            --breakPos;
-            while (breakPos > 0 && (line[breakPos] & 0xc0) == 0x80) --breakPos;
-          }
-        }
-        if (breakPos == 0) breakPos = 1;
-      }
+      const size_t breakPos = txtLayout::fitLine(
+          line, viewportWidth,
+          [](const char* text, void* context) {
+            const auto& m = *static_cast<MeasureContext*>(context);
+            return m.renderer.getTextAdvanceX(m.fontId, text, EpdFontFamily::REGULAR);
+          },
+          &measureContext);
 
       if (breakPos == line.length()) {
         outLines.push_back(line);
@@ -209,7 +193,7 @@ bool TxtReaderActivity::loadPageAtOffset(const GfxRenderer& renderer, size_t off
     } while (!line.empty() && static_cast<int>(outLines.size()) < linesPerPage);
 
     if (line.empty()) {
-      pos = lineEnd + 1;
+      pos = lineEnd + (lineEnd < chunkSize ? 1 : 0);
     } else {
       pos = pos + lineBytePos;
       break;
@@ -242,6 +226,43 @@ void TxtReaderActivity::renderBook() {
     renderer.drawCenteredText(UI_12_FONT_ID, 300, tr(STR_EMPTY_FILE), true, EpdFontFamily::BOLD);
     renderer.displayBuffer();
     return;
+  }
+
+  if (restoreOffset != UINT32_MAX || restorePage != 0) {
+    // Release the render mutex between batches so Back, sleep and other system actions remain available.
+    for (int slice = 0;
+         slice < 2 && !indexComplete &&
+         (restoreOffset != UINT32_MAX ? pageOffsets.back() < restoreOffset : pageOffsets.size() <= restorePage);
+         ++slice) {
+      const auto frontier = pageOffsets.size() - 1;
+      size_t next = pageOffsets.back();
+      if (!loadPageAtOffset(renderer, next, currentPageLines, next) || next <= pageOffsets.back()) {
+        renderer.clearScreen();
+        renderer.drawCenteredText(UI_12_FONT_ID, 300, tr(STR_PAGE_LOAD_ERROR), true, EpdFontFamily::BOLD);
+        renderer.displayBuffer();
+        return;
+      }
+      observePage(frontier, next);
+    }
+    if (!indexComplete &&
+        (restoreOffset != UINT32_MAX ? pageOffsets.back() < restoreOffset : pageOffsets.size() <= restorePage)) {
+      if (!restorePreview && restoreOffset != UINT32_MAX) {
+        size_t next = restoreOffset;
+        if (loadPageAtOffset(renderer, restoreOffset, currentPageLines, next)) {
+          renderer.clearScreen();
+          renderPage(renderer);
+          restorePreview = true;
+        }
+      }
+      requestUpdate();
+      return;
+    }
+    currentPage =
+        restoreOffset != UINT32_MAX
+            ? int(std::upper_bound(pageOffsets.begin(), pageOffsets.end(), restoreOffset) - pageOffsets.begin()) - 1
+            : int(std::min<size_t>(restorePage, pageOffsets.size() - 1));
+    restoreOffset = UINT32_MAX;
+    restorePage = 0;
   }
 
   // A long-press may request up to ten unseen pages; measure only that bounded prefix.
@@ -371,7 +392,7 @@ void TxtReaderActivity::renderStatusBar() const {
 bool TxtReaderActivity::pageTurn(bool isForward) {
   RenderLock lock(*this);
   // Ignore paging until the first visible page is ready
-  if (!initialized) {
+  if (!initialized || restorePage || restoreOffset != UINT32_MAX) {
     return false;
   }
   if (isForward) {
@@ -391,7 +412,7 @@ bool TxtReaderActivity::pageTurn(bool isForward) {
 
 bool TxtReaderActivity::skipPages(int amount) {
   RenderLock lock(*this);
-  if (!initialized) {
+  if (!initialized || restorePage || restoreOffset != UINT32_MAX) {
     return false;
   }
   int newPage = currentPage + amount;
@@ -416,12 +437,9 @@ void TxtReaderActivity::onReturnFromEndOfBook() { currentPage = totalPages > 0 ?
 
 void TxtReaderActivity::saveProgress() {
   if (savedProgressPage == currentPage) return;
-  uint8_t data[4];
-  data[0] = currentPage & 0xFF;
-  data[1] = (currentPage >> 8) & 0xFF;
-  data[2] = 0;
-  data[3] = 0;
-  if (!ProgressFile::writeAtomic(txt->getCachePath(), data, sizeof(data))) {
+  const uint32_t data[] = {static_cast<uint32_t>(currentPage.load()), static_cast<uint32_t>(pageOffsets[currentPage]),
+                           static_cast<uint32_t>(txt->getFileSize())};
+  if (!ProgressFile::writeAtomic(txt->getCachePath(), reinterpret_cast<const uint8_t*>(data), sizeof(data))) {
     LOG_ERR("TRS", "Failed to save progress: page %d", currentPage.load());
   } else {
     savedProgressPage = currentPage;
@@ -430,17 +448,31 @@ void TxtReaderActivity::saveProgress() {
 
 void TxtReaderActivity::loadProgress() {
   HalFile f;
-  if (Storage.openFileForRead("TRS", txt->getCachePath() + "/progress.bin", f)) {
-    uint8_t data[4];
-    if (f.read(data, 4) == 4) {
-      currentPage = data[0] + (data[1] << 8);
-      if (currentPage >= totalPages) {
-        currentPage = totalPages - 1;
+  if (ProgressFile::open(txt->getCachePath(), ProgressFile::Format::Txt, f)) {
+    uint32_t data[3]{};
+    const int size = f.read(data, sizeof(data));
+    if (size != 4 && size != sizeof(data)) return;
+    if (size == sizeof(data) && (data[2] != txt->getFileSize() || data[1] >= data[2])) return;
+    const uint32_t page = size == 4 ? data[0] & 0xffff : data[0];
+    if (size == sizeof(data)) {
+      restoreOffset = data[1];
+    } else if (page < pageOffsets.size()) {
+      currentPage = static_cast<int>(page);
+      return;
+    } else {
+      // The old layout can still translate a legacy page number into a byte position.
+      HalFile old;
+      uint8_t header[30]{};
+      uint32_t magic = 0, length = 0, offset = 0;
+      if (Storage.openFileForRead("TRS", txt->getCachePath() + "/index.bin", old) &&
+          old.read(header, sizeof(header)) == sizeof(header)) {
+        memcpy(&magic, header, 4);
+        memcpy(&length, header + 5, 4);
+        if (magic == CACHE_MAGIC && (header[4] == 3 || header[4] == CACHE_VERSION) && length == txt->getFileSize() &&
+            old.seek(sizeof(header) + page * 4) && old.read(&offset, 4) == 4 && offset < length && offset > 0)
+          restoreOffset = offset;
       }
-      if (currentPage < 0) {
-        currentPage = 0;
-      }
-      LOG_DBG("TRS", "Loaded progress: page %d/%d", currentPage.load(), totalPages);
+      if (restoreOffset == UINT32_MAX) restorePage = page;
     }
   }
 }
@@ -581,9 +613,13 @@ bool TxtReaderActivity::savePageIndexCache() {
     indexHeaderWritten = true;
   }
   if (!f.seek(headerSize + savedIndexEntries * sizeof(uint32_t))) return false;
-  for (; savedIndexEntries < pageOffsets.size(); ++savedIndexEntries) {
-    const uint32_t offset = pageOffsets[savedIndexEntries];
-    if (f.write(&offset, sizeof(offset)) != sizeof(offset)) return false;
+  uint32_t offsets[32];
+  while (savedIndexEntries < pageOffsets.size()) {
+    const size_t count = std::min<size_t>(32, pageOffsets.size() - savedIndexEntries);
+    for (size_t i = 0; i < count; ++i) offsets[i] = pageOffsets[savedIndexEntries + i];
+    const size_t bytes = count * sizeof(offsets[0]);
+    if (f.write(offsets, bytes) != bytes) return false;
+    savedIndexEntries += count;
   }
   // Complete offsets must reach the card before publishing EOF or progress.
   f.flush();

@@ -6,8 +6,48 @@
 namespace weather {
 namespace {
 constexpr float MISSING = std::numeric_limits<float>::quiet_NaN();
+bool publicIpv4(const char* text) {
+  uint8_t octets[4]{};
+  for (unsigned i = 0; i < 4; ++i) {
+    unsigned value = 0, digits = 0;
+    const char* start = text;
+    while (*text >= '0' && *text <= '9') {
+      value = value * 10 + unsigned(*text++ - '0');
+      if (++digits > 3 || value > 255) return false;
+    }
+    if (!digits || (digits > 1 && *start == '0')) return false;
+    octets[i] = value;
+    if (i < 3 && *text++ != '.') return false;
+  }
+  if (*text) return false;
+  const auto a = octets[0], b = octets[1], c = octets[2];
+  return a != 0 && a != 10 && a != 127 && a < 224 && !(a == 100 && b >= 64 && b <= 127) && !(a == 169 && b == 254) &&
+         !(a == 172 && b >= 16 && b <= 31) && !(a == 192 && (b == 168 || (b == 0 && (c == 0 || c == 2)))) &&
+         !(a == 198 && (b == 18 || b == 19 || (b == 51 && c == 100))) && !(a == 203 && b == 0 && c == 113);
 }
-bool parseForecast(JsonVariantConst doc, uint32_t cityId, int64_t fetchedAt, Snapshot& out) {
+}  // namespace
+bool parseDnsAddress(JsonVariantConst doc, const char* hostname, char* address, size_t capacity) {
+  if (!address || !capacity) return false;
+  address[0] = 0;
+  if (!hostname || (doc["Status"] | -1) != 0 || (doc["TC"] | false)) return false;
+  const auto question = doc["Question"][0];
+  const char* name = question["name"] | "";
+  const size_t length = strlen(hostname);
+  if ((question["type"] | 0) != 1 || strncmp(name, hostname, length) || (name[length] && strcmp(name + length, ".")))
+    return false;
+  unsigned checked = 0;
+  for (const auto record : doc["Answer"].as<JsonArrayConst>()) {
+    if (++checked > 16) break;
+    const char* candidate = record["data"] | "";
+    if ((record["type"] | 0) == 1 && strlen(candidate) < capacity && publicIpv4(candidate)) {
+      memcpy(address, candidate, strlen(candidate) + 1);
+      return true;
+    }
+  }
+  return false;
+}
+bool parseForecast(JsonVariantConst doc, uint32_t cityId, int64_t fetchedAt, Snapshot& out, bool* stale) {
+  if (stale) *stale = false;
   if (doc["error"] | false) return false;
   const auto units = doc["current_units"];
   if (strcmp(units["temperature_2m"] | "", "°C") || strcmp(units["wind_speed_10m"] | "", "m/s") ||
@@ -37,7 +77,10 @@ bool parseForecast(JsonVariantConst doc, uint32_t cityId, int64_t fetchedAt, Sna
     day.code = daily["weather_code"][i] | int16_t(-1);
     day.rainPercent = daily["precipitation_probability_max"][i] | int16_t(-1);
   }
-  return validSnapshot(out) && out.dataTime <= fetchedAt + 900 && out.dataTime >= fetchedAt - 86400;
+  if (!validSnapshot(out)) return false;
+  const bool fresh = forecastFresh(out.dataTime, fetchedAt);
+  if (stale) *stale = !fresh;
+  return fresh;
 }
 void snapshotToJson(const Snapshot& v, JsonDocument& doc) {
   doc["schema"] = 1;

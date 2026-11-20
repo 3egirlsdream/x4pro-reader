@@ -23,6 +23,7 @@ class WeatherActivity final : public Activity {
   bool completed = false;
   bool entryPowerReleased = false;
   FrameGate frameGate;
+  uint32_t frameRevision = 0;  // Protected by RenderLock.
   std::atomic<UpdateResult> result{UpdateResult::Idle};
   GfxRenderer::Orientation previousOrientation = GfxRenderer::Portrait;
   std::unique_ptr<Request> request;

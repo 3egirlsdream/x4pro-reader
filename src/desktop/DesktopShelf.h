@@ -21,6 +21,7 @@ class Shelf {
   // Main-loop slices; never called while processing a touch contact.
   bool step(int coverHeight);
   void stop();
+  static void quiesceCovers();
   bool loadPage(int page);
   void removeMissing();
   const std::array<Book, BOOKS_PER_PAGE>& visible() const { return books; }
@@ -34,10 +35,7 @@ class Shelf {
  private:
   static void buildTask(void* context);
   static void coverTask(void* context);
-  std::atomic<bool> coverBusy{false}, coverDone{false};
   std::array<bool, BOOKS_PER_PAGE> coverAttempted{};
-  std::string coverJobPath, coverResult;
-  int coverSlot = 0, jobHeight = 0;
   void openIndex();
   bool loadOrder();
   void saveOrder();

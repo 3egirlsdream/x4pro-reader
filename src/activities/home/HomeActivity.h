@@ -1,5 +1,6 @@
 #pragma once
 #include "activities/Activity.h"
+#include "activities/InputQueue.h"
 #include "components/CoverGridHomeUi.h"
 #include "desktop/DesktopShelf.h"
 class HomeActivity final : public Activity {
@@ -9,7 +10,7 @@ class HomeActivity final : public Activity {
   bool cleanInitialRefresh;
   std::atomic<bool> firstRenderDone{false};
   int selection = 0;
-  int pendingCommand = -1;
+  InputQueue<int> commands;
   uint32_t pendingSince = 0;
   void processCommand(int command);
   uint32_t minute = 0;

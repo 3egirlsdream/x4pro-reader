@@ -19,7 +19,8 @@ class MinesweeperActivity final : public GameActivity {
   void load() override;
   void save() override;
   void drawGame() override;
-  void inputGame() override;
+  bool usesFlagInput() const override { return true; }
+  void inputGame(const GameInput& event) override;
   void newGame(bool alternate) override;
   int hit(int x, int y) const;
   void act();

@@ -13,6 +13,11 @@ int main() {
   auto& store = Store::instance();
   store.load();
   assert(!store.canEnable() && !store.setEnabled(true));
+  testStorage.failRename = 1;
+  assert(!store.selectCoordinates("Uncommitted", 32, 122));
+  testStorage.failRename = 0;
+  store.load();
+  assert(!store.city());
   assert(store.selectCoordinates("Home", 31.2304f, 121.4737f));
   const auto homeId = store.settings.cityId;
   Snapshot s;
@@ -26,6 +31,41 @@ int main() {
   for (size_t i = 0; i < 5; ++i) s.days[i] = {s.dataTime + int64_t(i) * 86400, 10, 25, 3, 50};
   assert(store.acceptSnapshot(s));
   assert(store.setEnabled(true));
+  const auto cachedFiles = testStorage.files;
+  for (int fail : {1, 2}) {
+    testStorage.files = cachedFiles;
+    testStorage.renameCalls = 0;
+    testStorage.failRename = fail;
+    assert(!store.selectCoordinates("New", 32, 122));
+    assert(store.city()->id == homeId && std::string(store.city()->name) == "Home");
+    assert(store.hasCache && store.settings.enabled && store.snapshot.cityId == homeId);
+    testStorage.failRename = 0;
+    store.load();
+    assert(store.city()->id == homeId && store.hasCache && store.settings.enabled);
+    testStorage.files = cachedFiles;
+    testStorage.renameCalls = 0;
+    testStorage.failRename = fail;
+    assert(!store.selectCity(cities()[0].id));
+    assert(store.city()->id == homeId && store.hasCache && store.settings.enabled);
+    testStorage.failRename = 0;
+    store.load();
+    assert(store.city()->id == homeId && store.hasCache && store.settings.enabled);
+  }
+  testStorage.files = cachedFiles;
+  UpdateDiagnostic diagnostic;
+  diagnostic.stage = RequestStage::Alternate;
+  diagnostic.result = UpdateResult::TlsError;
+  diagnostic.elapsedMs = 12345;
+  diagnostic.tlsCode = -123;
+  diagnostic.fallback = true;
+  assert(store.saveDiagnostic(diagnostic));
+  JsonDocument diagnosticJson;
+  assert(deserializeJson(diagnosticJson, testStorage.files.at("/.crosspoint/apps/weather/diagnostic.json")) ==
+         DeserializationError::Ok);
+  assert(diagnosticJson["elapsedMs"] == 12345 && diagnosticJson["tlsCode"] == -123);
+  assert(diagnosticJson["fallback"] == true && store.settings.enabled && store.hasCache);
+  assert(testStorage.files.at("/.crosspoint/apps/weather/cache.json") ==
+         cachedFiles.at("/.crosspoint/apps/weather/cache.json"));
   store.load();
   assert(store.settings.enabled && store.hasCache && store.city()->id == homeId);
   assert(std::string(store.city()->name) == "Home");
